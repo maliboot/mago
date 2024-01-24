@@ -1,0 +1,22 @@
+package config
+
+import (
+	"context"
+
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/maliboot/mago"
+	"github.com/maliboot/mago/config"
+)
+
+func NewHttpServer(c *config.Conf) *mago.Http {
+
+	// http
+	h := mago.NewHttp(c)
+
+	// 手动注册路由
+	h.GET("/ping", func(c context.Context, ctx *app.RequestContext) {
+		mago.NewResponse(ctx).Success("pong")
+	})
+
+	return h
+}

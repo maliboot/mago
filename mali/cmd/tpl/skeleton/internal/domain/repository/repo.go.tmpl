@@ -1,0 +1,12 @@
+package repository
+
+import (
+	"github.com/maliboot/mago"
+	"{{ .TplArgs.ModName }}/internal/domain/model/{{ .TplArgs.LowerTableName }}"
+)
+
+// {{ .TplArgs.UpperCamelTableName }}Repo
+// #[Dependency({{ .TplArgs.ModName }}/internal/infra/repository/{{ .TplArgs.UpperCamelTableName }}CmdRepo)]
+type {{ .TplArgs.UpperCamelTableName }}Repo interface {
+	mago.CmdRepository[{{ .TplArgs.LowerTableName }}.{{ .TplArgs.UpperCamelTableName }}]
+}

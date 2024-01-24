@@ -1,0 +1,70 @@
+package admin
+
+import (
+	"context"
+	"strconv"
+
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/maliboot/mago"
+
+	cmdexe "{{ .TplArgs.ModName }}/internal/app/executor/command"
+	qryexe "{{ .TplArgs.ModName }}/internal/app/executor/query"
+	"{{ .TplArgs.ModName }}/internal/client/dto/command"
+	"{{ .TplArgs.ModName }}/internal/client/dto/query"
+)
+
+// {{ .TplArgs.UpperCamelTableName }}Controller
+// #[Controller("/{{ .TplArgs.LowerCamelTableName }}")]
+type {{ .TplArgs.UpperCamelTableName }}Controller struct {
+	mago.AbstractAdapter `wire:"-"`
+	ByIdQryExe       *qryexe.{{ .TplArgs.UpperCamelTableName }}ByIdQryExe
+	ListByPageQryExe *qryexe.{{ .TplArgs.UpperCamelTableName }}ListByPageQryExe
+	CreateQryExe     *cmdexe.{{ .TplArgs.UpperCamelTableName }}CreateCmdExe
+	UpdateQryExe     *cmdexe.{{ .TplArgs.UpperCamelTableName }}UpdateCmdExe
+	DeleteQryExe     *cmdexe.{{ .TplArgs.UpperCamelTableName }}DeleteCmdExe
+}
+
+// GetById
+// #[RequestMapping(path: "getById", methods: "get")]
+func (u *{{ .TplArgs.UpperCamelTableName }}Controller) GetById(_ context.Context, ctx *app.RequestContext) {
+	var qry query.{{ .TplArgs.UpperCamelTableName }}Qry
+	_ = ctx.Bind(&qry)
+
+	u.Response(ctx, u.ByIdQryExe.Execute(&qry))
+}
+
+// ListByPage
+// #[RequestMapping(path: "listByPage", methods: "get")]
+func (u *{{ .TplArgs.UpperCamelTableName }}Controller) ListByPage(_ context.Context, ctx *app.RequestContext) {
+	var qry query.{{ .TplArgs.UpperCamelTableName }}ListByPageQry
+	qry.PageIndex, _ = strconv.Atoi(ctx.DefaultQuery("pageIndex", "1"))
+	qry.PageSize, _ = strconv.Atoi(ctx.DefaultQuery("pageSize", "10"))
+
+	u.Response(ctx, u.ListByPageQryExe.Execute(&qry))
+}
+
+// Create
+// #[RequestMapping(path: "create", methods: "post")]
+func (u *{{ .TplArgs.UpperCamelTableName }}Controller) Create(_ context.Context, ctx *app.RequestContext) {
+	var cmd command.{{ .TplArgs.UpperCamelTableName }}CreateCmd
+	_ = ctx.Bind(&cmd)
+
+	u.Response(ctx, u.CreateQryExe.Execute(&cmd))
+}
+
+// Update
+// #[RequestMapping(path: "update", methods: "put")]
+func (u *{{ .TplArgs.UpperCamelTableName }}Controller) Update(_ context.Context, ctx *app.RequestContext) {
+	var cmd command.{{ .TplArgs.UpperCamelTableName }}UpdateCmd
+	_ = ctx.Bind(&cmd)
+
+	u.Response(ctx, u.UpdateQryExe.Execute(&cmd))
+}
+
+// Delete
+// #[RequestMapping(path: "delete", methods: "delete")]
+func (u *{{ .TplArgs.UpperCamelTableName }}Controller) Delete(_ context.Context, ctx *app.RequestContext) {
+	var qry query.{{ .TplArgs.UpperCamelTableName }}Qry
+	_ = ctx.Bind(&qry)
+	u.Response(ctx, u.DeleteQryExe.Execute([]int{qry.Id}))
+}

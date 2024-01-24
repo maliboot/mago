@@ -1,0 +1,10 @@
+package command
+
+import (
+	"github.com/maliboot/mago"
+)
+
+type {{ .TplArgs.UpperCamelTableName }}CreateCmd struct {
+	{{- range .TplArgs.TableFields }}{{ if eq .LowerCamelName "id" }} {{continue}} {{ end }}
+    {{ .UpperCamelName }} {{ .Type }} `json:"{{ .LowerCamelName }}"` {{ end }}
+}

@@ -1,0 +1,22 @@
+package command
+
+import (
+	"github.com/maliboot/mago"
+
+	"{{ .TplArgs.ModName }}/internal/domain/repository"
+)
+
+type {{ .TplArgs.UpperCamelTableName }}DeleteCmdExe struct {
+	repo repository.{{ .TplArgs.UpperCamelTableName }}Repo
+}
+
+// New{{ .TplArgs.UpperCamelTableName }}DeleteQryExe #[Inject]
+func New{{ .TplArgs.UpperCamelTableName }}DeleteQryExe(repo repository.{{ .TplArgs.UpperCamelTableName }}Repo) *{{ .TplArgs.UpperCamelTableName }}DeleteCmdExe {
+	return &{{ .TplArgs.UpperCamelTableName }}DeleteCmdExe{repo: repo}
+}
+
+func (e *{{ .TplArgs.UpperCamelTableName }}DeleteCmdExe) Execute(id []int) *mago.VO[mago.EmptyVO] {
+	e.repo.Delete(id)
+
+	return mago.NewVO[mago.EmptyVO](e.repo.Error(), nil)
+}

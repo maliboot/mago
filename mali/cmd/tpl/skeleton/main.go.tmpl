@@ -1,0 +1,46 @@
+package main
+
+import (
+	"flag"
+
+	"github.com/maliboot/mago"
+	"github.com/maliboot/mago/config"
+)
+
+var (
+	flagConf string
+)
+
+func init() {
+	flag.StringVar(&flagConf, "f", "./conf.yml", "config path, eg: -f conf.yml")
+}
+
+func NewApp(
+    c *config.Conf,
+    hs *mago.Http,
+    // container *Container,
+) *mago.App {
+	// inject
+	// container.Inject(hs)
+
+	// app
+	return mago.New(
+		c.AppName,
+		[]mago.Server{hs},
+	)
+}
+
+func main() {
+	flag.Parse()
+
+	// 配置
+	c := config.NewConf(config.WithConfFile(flagConf))
+	if err := c.Bootstrap(); err != nil {
+		panic(err)
+	}
+
+	// start
+	if err := initApp(c).Run(); err != nil {
+		panic(err)
+	}
+}

@@ -1,0 +1,28 @@
+package command
+
+import (
+	"github.com/maliboot/mago"
+
+	"{{ .TplArgs.ModName }}/internal/client/dto/command"
+	"{{ .TplArgs.ModName }}/internal/domain/model/{{ .TplArgs.LowerTableName }}"
+	"{{ .TplArgs.ModName }}/internal/domain/repository"
+)
+
+type {{ .TplArgs.UpperCamelTableName }}UpdateCmdExe struct {
+	repo repository.{{ .TplArgs.UpperCamelTableName }}Repo
+}
+
+// New{{ .TplArgs.UpperCamelTableName }}UpdateQryExe #[Inject]
+func New{{ .TplArgs.UpperCamelTableName }}UpdateQryExe(repo repository.{{ .TplArgs.UpperCamelTableName }}Repo) *{{ .TplArgs.UpperCamelTableName }}UpdateCmdExe {
+	return &{{ .TplArgs.UpperCamelTableName }}UpdateCmdExe{repo: repo}
+}
+
+func (e *{{ .TplArgs.UpperCamelTableName }}UpdateCmdExe) Execute(cmd *command.{{ .TplArgs.UpperCamelTableName }}UpdateCmd) *mago.VO[mago.EmptyVO] {
+	var u = &{{ .TplArgs.LowerTableName }}.{{ .TplArgs.UpperCamelTableName }}{
+		{{- range .TplArgs.TableFields }}
+        {{ .UpperCamelName }}: cmd.{{ .UpperCamelName }}, {{ end }}
+	}
+	e.repo.Update(cmd.Id, u)
+
+	return mago.NewVO[mago.EmptyVO](e.repo.Error(), nil)
+}

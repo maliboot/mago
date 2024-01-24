@@ -1,0 +1,22 @@
+package query
+
+import (
+	"github.com/maliboot/mago"
+
+	qry "{{ .TplArgs.ModName }}/internal/client/dto/query"
+	"{{ .TplArgs.ModName }}/internal/infra/dataobject"
+	"{{ .TplArgs.ModName }}/internal/infra/repository"
+)
+
+type {{ .TplArgs.UpperCamelTableName }}ListByPageQryExe struct {
+	qryRepo *repository.{{ .TplArgs.UpperCamelTableName }}QryRepo
+}
+
+// New{{ .TplArgs.UpperCamelTableName }}ListByPageQryExe #[Inject]
+func New{{ .TplArgs.UpperCamelTableName }}ListByPageQryExe(qryRepo *repository.{{ .TplArgs.UpperCamelTableName }}QryRepo) *{{ .TplArgs.UpperCamelTableName }}ListByPageQryExe {
+	return &{{ .TplArgs.UpperCamelTableName }}ListByPageQryExe{qryRepo: qryRepo}
+}
+
+func (u *{{ .TplArgs.UpperCamelTableName }}ListByPageQryExe) Execute(qry *qry.{{ .TplArgs.UpperCamelTableName }}ListByPageQry) *mago.PageVO[dataobject.{{ .TplArgs.UpperCamelTableName }}DO] {
+	return u.qryRepo.ListByPage(&(qry.AbstractPageQuery))
+}

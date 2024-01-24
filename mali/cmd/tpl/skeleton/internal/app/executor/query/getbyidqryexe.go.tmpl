@@ -1,0 +1,27 @@
+package query
+
+import (
+	"github.com/maliboot/mago"
+	qry "{{ .TplArgs.ModName }}/internal/client/dto/query"
+	"{{ .TplArgs.ModName }}/internal/client/viewobject"
+	"{{ .TplArgs.ModName }}/internal/domain/repository"
+)
+
+type {{ .TplArgs.UpperCamelTableName }}ByIdQryExe struct {
+	service repository.{{ .TplArgs.UpperCamelTableName }}Repo
+}
+
+// New{{ .TplArgs.UpperCamelTableName }}ByIdQryExe #[Inject]
+func New{{ .TplArgs.UpperCamelTableName }}ByIdQryExe(service repository.{{ .TplArgs.UpperCamelTableName }}Repo) *{{ .TplArgs.UpperCamelTableName }}ByIdQryExe {
+	return &{{ .TplArgs.UpperCamelTableName }}ByIdQryExe{service: service}
+}
+
+func (u *{{ .TplArgs.UpperCamelTableName }}ByIdQryExe) Execute(qry *qry.{{ .TplArgs.UpperCamelTableName }}Qry) *mago.VO[viewobject.{{ .TplArgs.UpperCamelTableName }}VO] {
+	m := u.service.Find(qry.Id)
+	err := u.service.Error()
+	if m == nil && err == nil {
+		return mago.NewZeroVO[viewobject.{{ .TplArgs.UpperCamelTableName }}VO]()
+	}
+
+	return mago.NewVO[viewobject.{{ .TplArgs.UpperCamelTableName }}VO](err, m)
+}

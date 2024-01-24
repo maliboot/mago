@@ -1,0 +1,19 @@
+package repository
+
+import (
+	"github.com/maliboot/mago"
+	"github.com/maliboot/mago/config"
+
+	"{{ .TplArgs.ModName }}/internal/infra/dataobject"
+)
+
+type {{ .TplArgs.UpperCamelTableName }}QryRepo struct {
+	mago.QryRepo[dataobject.{{ .TplArgs.UpperCamelTableName }}DO]
+}
+
+// New{{ .TplArgs.UpperCamelTableName }}QryRepo #[Inject]
+func New{{ .TplArgs.UpperCamelTableName }}QryRepo(c *config.Conf) *{{ .TplArgs.UpperCamelTableName }}QryRepo {
+	ins := &{{ .TplArgs.UpperCamelTableName }}QryRepo{}
+	ins.Conf = c
+	return ins
+}

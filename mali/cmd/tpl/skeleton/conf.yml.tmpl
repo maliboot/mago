@@ -1,0 +1,15 @@
+app_name: example
+app_env: dev
+server:
+  http:
+    port: 9501
+logger:
+  log_dir:
+databases:
+  example:
+    dsn: root:root@tcp(127.0.0.1:3306)/example?&parseTime=true&loc=Local
+    singular_table: true
+redis:
+  host: 127.0.0.1
+  port: 6379
+  db: 1

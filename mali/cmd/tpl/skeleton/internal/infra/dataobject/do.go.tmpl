@@ -1,0 +1,19 @@
+package dataobject
+
+import (
+	"github.com/maliboot/mago"
+)
+
+type {{ .TplArgs.UpperCamelTableName }}DO struct {
+	mago.AbstractDataObject
+	{{- range .TplArgs.TableFields }}{{ if or (or (eq .LowerCamelName "id") (eq .LowerCamelName "createdAt")) (or (eq .LowerCamelName "updatedAt") (eq .LowerCamelName "deletedAt")) }} {{continue}} {{ end }}
+    {{ .UpperCamelName }} {{ .Type }} `json:"{{ .LowerCamelName }}"` {{ end }}
+}
+
+func (do {{ .TplArgs.UpperCamelTableName }}DO) TableName() string {
+	return "{{ .TplArgs.TableName }}"
+}
+
+func (do {{ .TplArgs.UpperCamelTableName }}DO) DatabaseName() string {
+	return "{{ .TplArgs.DBName }}"
+}

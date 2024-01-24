@@ -1,0 +1,10 @@
+package command
+
+import (
+	"github.com/maliboot/mago"
+)
+
+type {{ .TplArgs.UpperCamelTableName }}UpdateCmd struct {
+	{{- range .TplArgs.TableFields }}
+    {{ .UpperCamelName }} {{ .Type }} `json:"{{ .LowerCamelName }}"` {{ end }}
+}

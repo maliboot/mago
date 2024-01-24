@@ -1,0 +1,19 @@
+//go:build wireinject
+// +build wireinject
+
+package main
+
+import (
+	"github.com/google/wire"
+	"github.com/maliboot/mago"
+	conf "github.com/maliboot/mago/config"
+	"{{ .TplArgs.ModName }}/config"
+)
+
+func initApp(*conf.Conf) *mago.App {
+	panic(wire.Build(
+		InjectProviderSet,
+		config.ProviderSet,
+		NewApp,
+	))
+}

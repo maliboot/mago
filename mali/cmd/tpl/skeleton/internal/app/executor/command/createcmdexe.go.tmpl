@@ -1,0 +1,28 @@
+package command
+
+import (
+	"github.com/maliboot/mago"
+
+	"{{ .TplArgs.ModName }}/internal/client/dto/command"
+	"{{ .TplArgs.ModName }}/internal/domain/model/{{ .TplArgs.LowerTableName }}"
+	"{{ .TplArgs.ModName }}/internal/domain/repository"
+)
+
+type {{ .TplArgs.UpperCamelTableName }}CreateCmdExe struct {
+	repo repository.{{ .TplArgs.UpperCamelTableName }}Repo
+}
+
+// New{{ .TplArgs.UpperCamelTableName }}CreateQryExe #[Inject]
+func New{{ .TplArgs.UpperCamelTableName }}CreateQryExe(repo repository.{{ .TplArgs.UpperCamelTableName }}Repo) *{{ .TplArgs.UpperCamelTableName }}CreateCmdExe {
+	return &{{ .TplArgs.UpperCamelTableName }}CreateCmdExe{repo: repo}
+}
+
+func (e *{{ .TplArgs.UpperCamelTableName }}CreateCmdExe) Execute(cmd *command.{{ .TplArgs.UpperCamelTableName }}CreateCmd) *mago.VO[mago.IdVO] {
+	var u = &{{ .TplArgs.LowerTableName }}.{{ .TplArgs.UpperCamelTableName }}{
+		{{- range .TplArgs.TableFields }}{{ if eq .LowerCamelName "id" }} {{ continue }} {{ end }}
+        {{ .UpperCamelName }}: cmd.{{ .UpperCamelName }}, {{ end }}
+	}
+	u.Id = int(e.repo.Create(u))
+
+	return mago.NewVO[mago.IdVO](e.repo.Error(), &mago.IdVO{ID: u.Id})
+}

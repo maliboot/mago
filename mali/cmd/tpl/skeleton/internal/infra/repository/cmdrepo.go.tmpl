@@ -1,0 +1,20 @@
+package repository
+
+import (
+	"github.com/maliboot/mago"
+	"github.com/maliboot/mago/config"
+
+	"{{ .TplArgs.ModName }}/internal/domain/model/{{ .TplArgs.LowerTableName }}"
+	"{{ .TplArgs.ModName }}/internal/infra/dataobject"
+)
+
+type {{ .TplArgs.UpperCamelTableName }}CmdRepo struct {
+	mago.CmdRepo[dataobject.{{ .TplArgs.UpperCamelTableName }}DO, {{ .TplArgs.LowerTableName }}.{{ .TplArgs.UpperCamelTableName }}]
+}
+
+// New{{ .TplArgs.UpperCamelTableName }}CmdRepo #[Inject]
+func New{{ .TplArgs.UpperCamelTableName }}CmdRepo(c *config.Conf) *{{ .TplArgs.UpperCamelTableName }}CmdRepo {
+	ins := &{{ .TplArgs.UpperCamelTableName }}CmdRepo{}
+	ins.Conf = c
+	return ins
+}
