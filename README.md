@@ -74,7 +74,7 @@ redis:
 ```shell
 cd mago-skeleton
 ## example为数据库名称，uss_message_tpl_var为表名。当无数据库名称时，会默认取`mago-skeleton/conf.yml`里第一个数据库
-mali curd example.uss_message_tpl_var
+mali curd -t=example.uss_message_tpl_var
 ```
 
 > 注意：当使用了注解路由时，需要在`mago-skeleton/main.go`中解开`*Container`注释。另外，`mali curd`默认生成的是注解路由
