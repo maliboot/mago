@@ -1,6 +1,8 @@
 package skeleton
 
-import _ "embed"
+import (
+	_ "embed"
+)
 
 var (
 	//go:embed internal/adapter/admin/controller.go.tmpl
@@ -61,25 +63,25 @@ type CurdTemplate struct {
 }
 
 var CurdTemplates = []*CurdTemplate{
-	{Name: "admin", ParentDir: "internal/adapter", IsDir: true},
-	{Name: "controller", Ext: "go", ParentDir: "internal/adapter/admin", Content: controllerTxt},
+	{Name: "admin", ParentDir: "internal" + ps + "adapter", IsDir: true},
+	{Name: "controller", Ext: "go", ParentDir: "internal" + ps + "adapter" + ps + "admin", Content: controllerTxt},
 
-	{Name: "createcmdexe", Ext: "go", ParentDir: "internal/app/executor/command", Content: createCmdExeTxt},
-	{Name: "updatecmdexe", Ext: "go", ParentDir: "internal/app/executor/command", Content: updateCmdExeTxt},
-	{Name: "deletecmdexe", Ext: "go", ParentDir: "internal/app/executor/command", Content: deleteCmdExeTxt},
-	{Name: "getbyidqryexe", Ext: "go", ParentDir: "internal/app/executor/query", Content: getByIdQryExeTxt},
-	{Name: "listbypageqryexe", Ext: "go", ParentDir: "internal/app/executor/query", Content: listByPageQryExeTxt},
+	{Name: "createcmdexe", Ext: "go", ParentDir: "internal" + ps + "app" + ps + "executor" + ps + "command", Content: createCmdExeTxt},
+	{Name: "updatecmdexe", Ext: "go", ParentDir: "internal" + ps + "app" + ps + "executor" + ps + "command", Content: updateCmdExeTxt},
+	{Name: "deletecmdexe", Ext: "go", ParentDir: "internal" + ps + "app" + ps + "executor" + ps + "command", Content: deleteCmdExeTxt},
+	{Name: "getbyidqryexe", Ext: "go", ParentDir: "internal" + ps + "app" + ps + "executor" + ps + "query", Content: getByIdQryExeTxt},
+	{Name: "listbypageqryexe", Ext: "go", ParentDir: "internal" + ps + "app" + ps + "executor" + ps + "query", Content: listByPageQryExeTxt},
 
-	{Name: "createcmd", Ext: "go", ParentDir: "internal/client/dto/command", Content: createCmdTxt},
-	{Name: "updatecmd", Ext: "go", ParentDir: "internal/client/dto/command", Content: updateCmdTxt},
-	{Name: "listbypageqry", Ext: "go", ParentDir: "internal/client/dto/query", Content: listByPageQryTxt},
-	{Name: "qry", Ext: "go", ParentDir: "internal/client/dto/query", Content: qryTxt},
-	{Name: "vo", Ext: "go", ParentDir: "internal/client/viewobject", Content: voTxt},
+	{Name: "createcmd", Ext: "go", ParentDir: "internal" + ps + "client" + ps + "dto" + ps + "command", Content: createCmdTxt},
+	{Name: "updatecmd", Ext: "go", ParentDir: "internal" + ps + "client" + ps + "dto" + ps + "command", Content: updateCmdTxt},
+	{Name: "listbypageqry", Ext: "go", ParentDir: "internal" + ps + "client" + ps + "dto" + ps + "query", Content: listByPageQryTxt},
+	{Name: "qry", Ext: "go", ParentDir: "internal" + ps + "client" + ps + "dto" + ps + "query", Content: qryTxt},
+	{Name: "vo", Ext: "go", ParentDir: "internal" + ps + "client" + ps + "viewobject", Content: voTxt},
 
-	{Name: "model", Ext: "go", ParentDir: "internal/domain/model", Content: modelTxt},
-	{Name: "repo", Ext: "go", ParentDir: "internal/domain/repository", Content: repoTxt},
+	{Name: "model", Ext: "go", ParentDir: "internal" + ps + "domain" + ps + "model", Content: modelTxt},
+	{Name: "repo", Ext: "go", ParentDir: "internal" + ps + "domain" + ps + "repository", Content: repoTxt},
 
-	{Name: "do", Ext: "go", ParentDir: "internal/infra/dataobject", Content: doTxt},
-	{Name: "cmdrepo", Ext: "go", ParentDir: "internal/infra/repository", Content: cmdRepoTxt},
-	{Name: "qryrepo", Ext: "go", ParentDir: "internal/infra/repository", Content: qryRepoTxt},
+	{Name: "do", Ext: "go", ParentDir: "internal" + ps + "infra" + ps + "dataobject", Content: doTxt},
+	{Name: "cmdrepo", Ext: "go", ParentDir: "internal" + ps + "infra" + ps + "repository", Content: cmdRepoTxt},
+	{Name: "qryrepo", Ext: "go", ParentDir: "internal" + ps + "infra" + ps + "repository", Content: qryRepoTxt},
 }

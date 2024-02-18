@@ -3,11 +3,12 @@ package tpl
 import (
 	_ "embed"
 	"fmt"
+	"slices"
+	"strings"
+
 	"github.com/maliboot/mago/mali/cmd/mbast"
 	"github.com/maliboot/mago/mali/cmd/mbast/attribute"
 	"github.com/maliboot/mago/mali/cmd/mod"
-	"slices"
-	"strings"
 )
 
 //go:embed wire.tmpl

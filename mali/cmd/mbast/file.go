@@ -1,11 +1,12 @@
 package mbast
 
 import (
-	"github.com/maliboot/mago/mali/cmd/mod"
 	"go/ast"
 	"go/token"
+	"os"
 	"strings"
 
+	"github.com/maliboot/mago/mali/cmd/mod"
 	"golang.org/x/tools/go/ast/inspector"
 )
 
@@ -16,7 +17,7 @@ type File struct {
 }
 
 func (f *File) getPkgName() string {
-	pkgSlice := strings.Split(f.path, "/")
+	pkgSlice := strings.Split(f.path, string(os.PathSeparator))
 	if len(pkgSlice) < 2 {
 		return ""
 	}

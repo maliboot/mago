@@ -130,23 +130,24 @@ func (cs *ColaCurd) Initialize() {
 func (cs *ColaCurd) Execute() error {
 	modPath := cs.mod.GetPath()
 	prefix := cs.TplArgs.LowerTableName
+	ps := string(os.PathSeparator)
 
 	// 模型目录
-	tpls := slices.Insert(skeleton.CurdTemplates, 0, &skeleton.CurdTemplate{Name: prefix, ParentDir: "internal/domain/model", IsDir: true})
+	tpls := slices.Insert(skeleton.CurdTemplates, 0, &skeleton.CurdTemplate{Name: prefix, ParentDir: "internal" + ps + "domain" + ps + "model", IsDir: true})
 
 	for _, t := range tpls {
-		p := modPath + "/" + t.ParentDir
+		p := modPath + ps + t.ParentDir
 		if t.IsDir {
-			_ = os.MkdirAll(p+"/"+t.Name, 0755)
+			_ = os.MkdirAll(p+ps+t.Name, 0755)
 			continue
 		}
 
 		switch t.Name {
 		case "model":
-			p = fmt.Sprintf("%s/%s/%s.%s", p, prefix, prefix, t.Ext)
+			p = p + ps + prefix + ps + prefix + t.Ext
 			break
 		default:
-			p = fmt.Sprintf("%s/%s%s.%s", p, prefix, t.Name, t.Ext)
+			p = fmt.Sprintf("%s%s%s%s.%s", p, ps, prefix, t.Name, t.Ext)
 		}
 
 		err := GenerateTpl(t.Content, cs, p, cs.force)

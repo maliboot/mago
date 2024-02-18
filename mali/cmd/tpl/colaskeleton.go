@@ -35,7 +35,7 @@ func (cs *ColaSkeleton) Initialize() {
 func (cs *ColaSkeleton) Execute() error {
 	modPath := cs.mod.GetPath()
 	for _, t := range skeleton.Templates {
-		p := modPath + "/" + t.Path
+		p := modPath + string(os.PathSeparator) + t.Path
 		if t.IsDir {
 			_ = os.MkdirAll(p, 0755)
 			continue

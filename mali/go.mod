@@ -6,7 +6,7 @@ require (
 	github.com/samber/lo v1.39.0
 	github.com/samber/mo v1.11.0
 	github.com/spf13/cobra v1.8.0
-	golang.org/x/tools v0.17.0
+	golang.org/x/tools v0.18.0
 )
 
 require (

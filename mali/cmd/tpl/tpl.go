@@ -31,7 +31,7 @@ func GenerateTpl(text string, data any, targetPath string, force bool) error {
 
 func ForceGenerateTpl(text string, data any, targetPath string) error {
 	var tplText bytes.Buffer
-	var targetTplS = strings.Split(targetPath, "/")
+	var targetTplS = strings.Split(targetPath, string(os.PathSeparator))
 	tpl := template.Must(template.New(targetTplS[len(targetTplS)-1]).Parse(text))
 	err := tpl.Execute(&tplText, data)
 	if err != nil {

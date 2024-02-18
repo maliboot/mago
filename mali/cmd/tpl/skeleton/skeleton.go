@@ -1,6 +1,9 @@
 package skeleton
 
-import _ "embed"
+import (
+	_ "embed"
+	"os"
+)
 
 var (
 	//go:embed main.go.tmpl
@@ -36,6 +39,8 @@ type Template struct {
 	Content string
 }
 
+var ps = string(os.PathSeparator)
+
 var Templates = []*Template{
 	{Name: "main", Type: "go", Path: "main.go", Content: mainTxt},
 	{Name: "wire", Type: "go", Path: "wire.go", Content: wireTxt},
@@ -45,31 +50,31 @@ var Templates = []*Template{
 	{Name: "README", Type: "md", Path: "README.md", Content: readMeTxt},
 
 	{Name: "config", Path: "config", IsDir: true},
-	{Name: "config", Type: "go", Path: "config/config.go", Content: configTxt},
-	{Name: "server", Type: "go", Path: "config/server.go", Content: serverTxt},
-	{Name: "autoload", Path: "config/autoload", IsDir: true},
+	{Name: "config", Type: "go", Path: "config" + ps + "config.go", Content: configTxt},
+	{Name: "server", Type: "go", Path: "config" + ps + "server.go", Content: serverTxt},
+	{Name: "autoload", Path: "config" + ps + "autoload", IsDir: true},
 
 	{Name: "internal", Path: "internal", IsDir: true},
-	{Name: "adapter", Path: "internal/adapter", IsDir: true},
+	{Name: "adapter", Path: "internal" + ps + "adapter", IsDir: true},
 
-	{Name: "app", Path: "internal/app", IsDir: true},
-	{Name: "executor", Path: "internal/app/executor", IsDir: true},
-	{Name: "command", Path: "internal/app/executor/command", IsDir: true},
-	{Name: "query", Path: "internal/app/executor/query", IsDir: true},
+	{Name: "app", Path: "internal" + ps + "app", IsDir: true},
+	{Name: "executor", Path: "internal" + ps + "app" + ps + "executor", IsDir: true},
+	{Name: "command", Path: "internal" + ps + "app" + ps + "executor" + ps + "command", IsDir: true},
+	{Name: "query", Path: "internal" + ps + "app" + ps + "executor" + ps + "query", IsDir: true},
 
-	{Name: "client", Path: "internal/client", IsDir: true},
-	{Name: "api", Path: "internal/client/api", IsDir: true},
-	{Name: "dto", Path: "internal/client/dto", IsDir: true},
-	{Name: "command", Path: "internal/client/dto/command", IsDir: true},
-	{Name: "query", Path: "internal/client/dto/query", IsDir: true},
-	{Name: "viewobject", Path: "internal/client/viewobject", IsDir: true},
+	{Name: "client", Path: "internal" + ps + "client", IsDir: true},
+	{Name: "api", Path: "internal" + ps + "client" + ps + "api", IsDir: true},
+	{Name: "dto", Path: "internal" + ps + "client" + ps + "dto", IsDir: true},
+	{Name: "command", Path: "internal" + ps + "client" + ps + "dto" + ps + "command", IsDir: true},
+	{Name: "query", Path: "internal" + ps + "client" + ps + "dto" + ps + "query", IsDir: true},
+	{Name: "viewobject", Path: "internal" + ps + "client" + ps + "viewobject", IsDir: true},
 
-	{Name: "domain", Path: "internal/domain", IsDir: true},
-	{Name: "model", Path: "internal/domain/model", IsDir: true},
-	{Name: "repository", Path: "internal/domain/repository", IsDir: true},
-	{Name: "service", Path: "internal/domain/service", IsDir: true},
+	{Name: "domain", Path: "internal" + ps + "domain", IsDir: true},
+	{Name: "model", Path: "internal" + ps + "domain" + ps + "model", IsDir: true},
+	{Name: "repository", Path: "internal" + ps + "domain" + ps + "repository", IsDir: true},
+	{Name: "service", Path: "internal" + ps + "domain" + ps + "service", IsDir: true},
 
-	{Name: "infra", Path: "internal/infra", IsDir: true},
-	{Name: "dataobject", Path: "internal/infra/dataobject", IsDir: true},
-	{Name: "repository", Path: "internal/infra/repository", IsDir: true},
+	{Name: "infra", Path: "internal" + ps + "infra", IsDir: true},
+	{Name: "dataobject", Path: "internal" + ps + "infra" + ps + "dataobject", IsDir: true},
+	{Name: "repository", Path: "internal" + ps + "infra" + ps + "repository", IsDir: true},
 }

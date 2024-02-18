@@ -34,7 +34,7 @@ type mod struct {
 }
 
 func (m *mod) initialize() {
-	modFilePath := m.path + "/go.mod"
+	modFilePath := m.path + string(os.PathSeparator) + "go.mod"
 	f, err := os.Open(modFilePath)
 	if err == nil {
 		scanner := bufio.NewScanner(f)
@@ -63,7 +63,7 @@ func (m *mod) GetPath() string {
 
 func (m *mod) GetPkgFQN(filePath string) string {
 	result := strings.Replace(filePath, m.path, m.name, 1)
-	resultSlice := strings.Split(result, "/")
+	resultSlice := strings.Split(result, string(os.PathSeparator))
 	if strings.Contains(resultSlice[len(resultSlice)-1], ".go") {
 		resultSlice = resultSlice[:len(resultSlice)-1]
 	}

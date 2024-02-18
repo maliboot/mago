@@ -2,12 +2,13 @@ package mbast
 
 import (
 	"fmt"
-	"github.com/maliboot/mago/mali/cmd/mod"
 	"go/parser"
 	"go/token"
 	"io/fs"
 	"path/filepath"
 	"strings"
+
+	"github.com/maliboot/mago/mali/cmd/mod"
 )
 
 type Files []*File
