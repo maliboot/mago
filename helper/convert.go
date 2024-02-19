@@ -1,6 +1,12 @@
 package helper
 
-import "github.com/bytedance/sonic"
+import (
+	"strings"
+
+	"github.com/bytedance/sonic"
+	"github.com/bytedance/sonic/ast"
+	"github.com/iancoleman/strcase"
+)
 
 func Marshal(object interface{}) ([]byte, error) {
 	var output []byte
@@ -12,9 +18,37 @@ func Marshal(object interface{}) ([]byte, error) {
 }
 
 func Unmarshal[S any](json []byte) (*S, error) {
+	root, err := sonic.Get(json)
+	if err != nil {
+		return nil, err
+	}
+
+	_ = root.ForEach(func(path ast.Sequence, node *ast.Node) bool {
+		// snake to camel
+		if strings.Contains(*path.Key, "_") {
+			root.IndexPair(path.Index).Key = strcase.ToLowerCamel(*path.Key)
+		}
+		return true
+	})
+
 	var s = new(S)
-	err := sonic.Unmarshal(json, s)
+	err = sonic.Unmarshal(json, s)
 	return s, err
+}
+
+func ToLowerCamelJson(snakeJson []byte) ([]byte, error) {
+	root, err := sonic.Get(snakeJson)
+	if err != nil {
+		return nil, err
+	}
+	_ = root.ForEach(func(path ast.Sequence, node *ast.Node) bool {
+		if strings.Contains(*path.Key, "_") {
+			root.IndexPair(path.Index).Key = strcase.ToLowerCamel(*path.Key)
+		}
+		return true
+	})
+
+	return root.MarshalJSON()
 }
 
 func Convertor[S any](source interface{}) (*S, error) {
@@ -26,7 +60,12 @@ func Convertor[S any](source interface{}) (*S, error) {
 		return nil, err
 	}
 
-	des, err := Unmarshal[S](json)
+	camelJson, err := ToLowerCamelJson(json)
+	if err != nil {
+		return nil, err
+	}
+
+	des, err := Unmarshal[S](camelJson)
 	if err != nil {
 		return nil, err
 	}
