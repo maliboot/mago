@@ -42,7 +42,7 @@ func ToLowerCamelJson(snakeJson []byte) ([]byte, error) {
 		return nil, err
 	}
 	_ = root.ForEach(func(path ast.Sequence, node *ast.Node) bool {
-		if strings.Contains(*path.Key, "_") {
+		if path.Index > 0 && strings.Contains(*path.Key, "_") {
 			root.IndexPair(path.Index).Key = strcase.ToLowerCamel(*path.Key)
 		}
 		return true
