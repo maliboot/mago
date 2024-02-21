@@ -18,21 +18,8 @@ func Marshal(object interface{}) ([]byte, error) {
 }
 
 func Unmarshal[S any](json []byte) (*S, error) {
-	root, err := sonic.Get(json)
-	if err != nil {
-		return nil, err
-	}
-
-	_ = root.ForEach(func(path ast.Sequence, node *ast.Node) bool {
-		// snake to camel
-		if strings.Contains(*path.Key, "_") {
-			root.IndexPair(path.Index).Key = strcase.ToLowerCamel(*path.Key)
-		}
-		return true
-	})
-
 	var s = new(S)
-	err = sonic.Unmarshal(json, s)
+	err := sonic.Unmarshal(json, s)
 	return s, err
 }
 
