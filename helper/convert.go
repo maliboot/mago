@@ -1,6 +1,7 @@
 package helper
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/bytedance/sonic"
@@ -28,14 +29,38 @@ func ToLowerCamelJson(snakeJson []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	if !root.Valid() {
+		return nil, fmt.Errorf("snakeJson转camelJson解析失败，json:%s", snakeJson)
+	}
+
+	newRoot := recursionJsonNode(root, func(key string) string {
+		if !strings.Contains(key, "_") {
+			return key
+		}
+		return strcase.ToLowerCamel(key)
+	})
+	return newRoot.MarshalJSON()
+}
+
+func recursionJsonNode(root ast.Node, keyFunc func(key string) string) ast.Node {
 	_ = root.ForEach(func(path ast.Sequence, node *ast.Node) bool {
-		if path.Index >= 0 && strings.Contains(*path.Key, "_") {
-			root.IndexPair(path.Index).Key = strcase.ToLowerCamel(*path.Key)
+		if path.Index < 0 {
+			return false
+		}
+
+		if path.Key != nil && keyFunc != nil {
+			root.IndexPair(path.Index).Key = keyFunc(*path.Key)
+		}
+
+		nodeType := node.Type()
+		if nodeType == 5 || nodeType == 6 {
+			_, _ = root.SetByIndex(path.Index, recursionJsonNode(*node, keyFunc))
 		}
 		return true
 	})
 
-	return root.MarshalJSON()
+	return root
 }
 
 func Convertor[S any](source interface{}) (*S, error) {
