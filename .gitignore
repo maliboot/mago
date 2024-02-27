@@ -39,3 +39,4 @@ build/
 .vscode/
 .idea/
 *.swp
+/config/conf.json

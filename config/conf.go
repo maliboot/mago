@@ -16,6 +16,7 @@ type Conf struct {
 	Server    *ServerConf              `yaml:"server"`
 	Log       *LogConf                 `yaml:"logger"`
 	Databases map[string]*DataBaseConf `yaml:"databases"`
+	File      *File                    `yaml:"file"`
 }
 
 func NewConf(opts ...ConfOption) *Conf {
