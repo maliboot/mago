@@ -8,7 +8,7 @@ import (
 // ErrorCode 错误码
 type ErrorCode int
 
-const (
+var (
 	// ErrNone 成功
 	ErrNone ErrorCode = 200
 	// ErrTokenInvalid token失效
