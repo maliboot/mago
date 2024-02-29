@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"os"
 	"sync"
 
@@ -77,26 +78,53 @@ func (s *FileStorage) Stat(path string) (*types.Object, error) {
 	return s.ins.Stat(path)
 }
 
-func (s *FileStorage) Upload(path string, processFunc func(bs []byte)) error {
-	return s.AutoUpload(path, processFunc, false)
-}
+func (s *FileStorage) upload(data interface{}, processFunc func(bs []byte), auto bool) error {
+	var fileName string
+	var fileSize int64
+	var fileReader io.Reader
+	var multipartFun func(fn func(part types.Part)) error = nil
 
-func (s *FileStorage) AutoUpload(path string, processFunc func(bs []byte), auto bool) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return err
+	switch dataVal := data.(type) {
+	case string:
+		file, err := os.Open(dataVal)
+		if err != nil {
+			return err
+		}
+		defer func(file *os.File) {
+			_ = file.Close()
+		}(file)
+
+		// 获取文件状态信息
+		fileInfo, err := file.Stat()
+		if err != nil {
+			return err
+		}
+		fileName = file.Name()
+		fileSize = fileInfo.Size()
+		fileReader = file
+		multipartFun = func(fn func(part types.Part)) error {
+			return s.MultipartUploadByPath(dataVal, fn)
+		}
+	case *multipart.FileHeader:
+		file, err := dataVal.Open()
+		if err != nil {
+			return err
+		}
+		defer func(file multipart.File) {
+			_ = file.Close()
+		}(file)
+
+		fileName = dataVal.Filename
+		fileSize = dataVal.Size
+		fileReader = file
+		multipartFun = func(fn func(part types.Part)) error {
+			return s.MultipartUploadByFileHeader(dataVal, fn)
+		}
+	default:
+		return errors.New("错误的data参数")
 	}
-	defer func(file *os.File) {
-		_ = file.Close()
-	}(file)
 
-	// 获取文件状态信息
-	fileInfo, err := file.Stat()
-	if err != nil {
-		return err
-	}
-
-	if auto && fileInfo.Size() > 10*1024*1024 {
+	if auto && fileSize > 10*1024*1024 {
 		var fn func(part types.Part) = nil
 		if processFunc != nil {
 			fn = func(part types.Part) {
@@ -104,14 +132,14 @@ func (s *FileStorage) AutoUpload(path string, processFunc func(bs []byte), auto 
 				processFunc(m)
 			}
 		}
-		return s.MultipartUpload(path, fn)
+		return multipartFun(fn)
 	}
 
 	var opts = make([]types.Pair, 0)
 	if processFunc != nil {
 		opts = append(opts, pairs.WithIoCallback(processFunc))
 	}
-	_, err = s.ins.Write(fileInfo.Name(), file, fileInfo.Size(), opts...)
+	_, err := s.ins.Write(fileName, fileReader, fileSize, opts...)
 	if err != nil {
 		return err
 	}
@@ -119,7 +147,27 @@ func (s *FileStorage) AutoUpload(path string, processFunc func(bs []byte), auto 
 	return nil
 }
 
-func (s *FileStorage) MultipartUpload(path string, processFunc func(part types.Part)) error {
+func (s *FileStorage) UploadByPath(path string, processFunc func(bs []byte), auto bool) error {
+	return s.upload(path, processFunc, auto)
+}
+
+func (s *FileStorage) UploadByFileHeader(fileHeader *multipart.FileHeader, processFunc func(bs []byte), auto bool) error {
+	return s.upload(fileHeader, processFunc, auto)
+}
+
+func (s *FileStorage) MultipartUploadByFileHeader(fileHeader *multipart.FileHeader, processFunc func(part types.Part)) error {
+	f, err := fileHeader.Open()
+	if err != nil {
+		return err
+	}
+	defer func(f multipart.File) {
+		_ = f.Close()
+	}(f)
+
+	return s.multipartUpload(fileHeader.Filename, fileHeader.Size, f, processFunc)
+}
+
+func (s *FileStorage) MultipartUploadByPath(path string, processFunc func(part types.Part)) error {
 	file, err := os.Open(path)
 	if err != nil {
 		return err
@@ -134,16 +182,20 @@ func (s *FileStorage) MultipartUpload(path string, processFunc func(part types.P
 		return err
 	}
 
+	return s.multipartUpload(path, fileInfo.Size(), file, processFunc)
+}
+
+func (s *FileStorage) multipartUpload(filePath string, fileSize int64, readerAt io.ReaderAt, processFunc func(part types.Part)) error {
+
 	multipartStorage, ok := s.ins.(types.Multiparter)
 	if !ok {
 		return fmt.Errorf("multiparter unimplemented for %s", s.name)
 	}
-	multipartIns, err := multipartStorage.CreateMultipart(fileInfo.Name())
+	multipartIns, err := multipartStorage.CreateMultipart(filePath)
 	if err != nil {
-		return fmt.Errorf("CreateMultipart %v: %v", path, err)
+		return fmt.Errorf("CreateMultipart %v: %v", filePath, err)
 	}
 
-	fileSize := fileInfo.Size()
 	// 设置每个分片的大小,2MB
 	partSize := int64(2 * 1024 * 1024)
 	// 计算分片数量
@@ -160,13 +212,13 @@ func (s *FileStorage) MultipartUpload(path string, processFunc func(part types.P
 			defer wg.Done()
 			// 读取分片数据
 			partData := make([]byte, partSize)
-			bytesRead, err := file.ReadAt(partData, partSize*int64(index))
+			bytesRead, err := readerAt.ReadAt(partData, partSize*int64(index))
 			if err != nil && !errors.Is(err, io.EOF) {
-				return fmt.Errorf("WriteMultipart.Read %v: %v", path, err)
+				return fmt.Errorf("WriteMultipart.Read %v: %v", filePath, err)
 			}
 			n, part, err := multipartStorage.WriteMultipart(multipartIns, bytes.NewReader(partData[:bytesRead]), int64(bytesRead), index)
 			if err != nil {
-				return fmt.Errorf("WriteMultipart %v: %v, len:%d", path, err, n)
+				return fmt.Errorf("WriteMultipart %v: %v, len:%d", filePath, err, n)
 			}
 			taskResult <- part
 			return nil
@@ -200,10 +252,10 @@ func (s *FileStorage) MultipartUpload(path string, processFunc func(part types.P
 
 	err = multipartStorage.CompleteMultipart(multipartIns, parts)
 	if err != nil {
-		return fmt.Errorf("CompleteMultipart %v: %v", path, err)
+		return fmt.Errorf("CompleteMultipart %v: %v", filePath, err)
 	}
 
-	hlog.Debugf("path[%s] multipart upload size: %dMB", path, fileSize/1024/1024)
+	hlog.Debugf("path[%s] multipart upload size: %dMB", filePath, fileSize/1024/1024)
 	return nil
 }
 
