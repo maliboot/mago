@@ -179,7 +179,7 @@ func (s *FileStorage) MultipartUpload(path string, processFunc func(part types.P
 
 	var parts = make([]*types.Part, partNumber)
 	for part := range taskResult {
-		if processFunc != nil {
+		if processFunc != nil && part != nil {
 			go processFunc(*part)
 		}
 		parts[part.Index] = part
