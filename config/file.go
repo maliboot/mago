@@ -5,12 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/maliboot/mago/helper"
 	"io"
 	"os"
 	"sync"
 
 	"github.com/cloudwego/hertz/pkg/common/hlog"
+	"github.com/maliboot/mago/helper"
 	_ "go.beyondstorage.io/services/cos/v3"
 	_ "go.beyondstorage.io/services/oss/v3"
 	"go.beyondstorage.io/v5/pairs"
@@ -71,6 +71,10 @@ func (f *File) GetStorage(workDir string) (*FileStorage, error) {
 	fs.name = f.Default
 	fs.ins, err = services.NewStoragerFromString(connStr)
 	return &fs, err
+}
+
+func (s *FileStorage) Stat(path string) (*types.Object, error) {
+	return s.ins.Stat(path)
 }
 
 func (s *FileStorage) Upload(path string, processFunc func(bs []byte)) error {
