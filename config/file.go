@@ -74,6 +74,10 @@ func (f *File) GetStorage(workDir string) (*FileStorage, error) {
 }
 
 func (s *FileStorage) Upload(path string, processFunc func(bs []byte)) error {
+	return s.AutoUpload(path, processFunc, false)
+}
+
+func (s *FileStorage) AutoUpload(path string, processFunc func(bs []byte), auto bool) error {
 	file, err := os.Open(path)
 	if err != nil {
 		return err
@@ -88,7 +92,7 @@ func (s *FileStorage) Upload(path string, processFunc func(bs []byte)) error {
 		return err
 	}
 
-	if fileInfo.Size() > 10*1024*1024 {
+	if auto && fileInfo.Size() > 10*1024*1024 {
 		return s.MultipartUpload(path, func(part types.Part) {
 			m, _ := helper.Marshal(part)
 			processFunc(m)
