@@ -93,10 +93,14 @@ func (s *FileStorage) AutoUpload(path string, processFunc func(bs []byte), auto 
 	}
 
 	if auto && fileInfo.Size() > 10*1024*1024 {
-		return s.MultipartUpload(path, func(part types.Part) {
-			m, _ := helper.Marshal(part)
-			processFunc(m)
-		})
+		var fn func(part types.Part) = nil
+		if processFunc != nil {
+			fn = func(part types.Part) {
+				m, _ := helper.Marshal(part)
+				processFunc(m)
+			}
+		}
+		return s.MultipartUpload(path, fn)
 	}
 
 	var opts = make([]types.Pair, 0)
