@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/maliboot/mago/helper"
 	"io"
 	"os"
 	"sync"
@@ -47,6 +48,9 @@ func (f *File) GetStorage(workDir string) (*FileStorage, error) {
 	if f.Default == "" {
 		return nil, fmt.Errorf("config:file未配置默认storage")
 	}
+	if workDir != "" && workDir[len(workDir)-1] != '/' {
+		workDir += "/"
+	}
 	var connStr string
 	switch f.Default {
 	case "oss":
@@ -82,6 +86,13 @@ func (s *FileStorage) Upload(path string, processFunc func(bs []byte)) error {
 	fileInfo, err := file.Stat()
 	if err != nil {
 		return err
+	}
+
+	if fileInfo.Size() > 10*1024*1024 {
+		return s.MultipartUpload(path, func(part types.Part) {
+			m, _ := helper.Marshal(part)
+			processFunc(m)
+		})
 	}
 
 	var opts = make([]types.Pair, 0)
