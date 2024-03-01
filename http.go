@@ -16,9 +16,16 @@ type Http struct {
 	c *config.Conf
 }
 
-func NewHttp(c *config.Conf) *Http {
+func NewDefaultHttp(c *config.Conf) *Http {
 	return &Http{
 		server.Default(server.WithHostPorts(fmt.Sprintf("%s:%d", c.Server.Http.IP, c.Server.Http.Port))),
+		c,
+	}
+}
+
+func NewHttp(c *config.Conf, hz *server.Hertz) *Http {
+	return &Http{
+		hz,
 		c,
 	}
 }
