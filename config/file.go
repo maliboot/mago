@@ -21,22 +21,22 @@ import (
 )
 
 type File struct {
-	Default string `json:"default"`
+	Default string `yaml:"default"`
 	Local   struct {
-		RootDir string `json:"root"`
-	} `json:"local"`
+		RootDir string `yaml:"root"`
+	} `yaml:"local"`
 	OSS struct {
-		AccessId     string `json:"access_id"`
-		AccessSecret string `json:"access_secret"`
-		Bucket       string `json:"bucket"`
-		Endpoint     string `json:"endpoint"`
-	} `json:"oss"`
+		AccessId     string `yaml:"access_id"`
+		AccessSecret string `yaml:"access_secret"`
+		Bucket       string `yaml:"bucket"`
+		Endpoint     string `yaml:"endpoint"`
+	} `yaml:"oss"`
 	COS struct {
-		Region    string `json:"region"`
-		AppId     string `json:"app_id"`
-		SecretID  string `json:"secret_id"`
-		SecretKey string `json:"secret_key"`
-		Bucket    string `json:"bucket"`
+		Region    string `yaml:"region"`
+		AppId     string `yaml:"app_id"`
+		SecretID  string `yaml:"secret_id"`
+		SecretKey string `yaml:"secret_key"`
+		Bucket    string `yaml:"bucket"`
 	}
 }
 
