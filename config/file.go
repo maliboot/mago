@@ -74,6 +74,21 @@ func (f *File) GetStorage(workDir string) (*FileStorage, error) {
 	return &fs, err
 }
 
+func (f *File) GetBaseUrl(path string) string {
+	if path == "" {
+		return ""
+	}
+	if path[0] != '/' {
+		path = "/" + path
+	}
+	switch f.Default {
+	case "oss":
+		return fmt.Sprintf("https://%s.%s%s", f.OSS.Bucket, f.OSS.Bucket, path)
+	}
+
+	return ""
+}
+
 func (s *FileStorage) Stat(path string) (*types.Object, error) {
 	return s.ins.Stat(path)
 }
