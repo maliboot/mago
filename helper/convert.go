@@ -43,6 +43,22 @@ func ToLowerCamelJson(snakeJson []byte) ([]byte, error) {
 	return newRoot.MarshalJSON()
 }
 
+func ToSnakeJson(lowerCamelJson []byte) ([]byte, error) {
+	root, err := sonic.Get(lowerCamelJson)
+	if err != nil {
+		return nil, err
+	}
+
+	if !root.Valid() {
+		return nil, fmt.Errorf("camelJson转解析失败，json:%s", lowerCamelJson)
+	}
+
+	newRoot := recursionJsonNode(root, func(key string) string {
+		return strcase.ToSnake(key)
+	})
+	return newRoot.MarshalJSON()
+}
+
 func recursionJsonNode(root ast.Node, keyFunc func(key string) string) ast.Node {
 	_ = root.ForEach(func(path ast.Sequence, node *ast.Node) bool {
 		if path.Index < 0 {
