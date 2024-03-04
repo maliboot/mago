@@ -79,6 +79,7 @@ func recursionJsonNode(root ast.Node, keyFunc func(key string) string) ast.Node 
 	return root
 }
 
+// Convertor 默认转字段key为小驼峰
 func Convertor[S any](source interface{}) (*S, error) {
 	if source == nil {
 		return nil, nil
@@ -89,6 +90,29 @@ func Convertor[S any](source interface{}) (*S, error) {
 	}
 
 	camelJson, err := ToLowerCamelJson(json)
+	if err != nil {
+		return nil, err
+	}
+
+	des, err := Unmarshal[S](camelJson)
+	if err != nil {
+		return nil, err
+	}
+
+	return des, err
+}
+
+// SnakeConvertor 默认转字段key为蛇形
+func SnakeConvertor[S any](source interface{}) (*S, error) {
+	if source == nil {
+		return nil, nil
+	}
+	json, err := Marshal(source)
+	if err != nil {
+		return nil, err
+	}
+
+	camelJson, err := ToSnakeJson(json)
 	if err != nil {
 		return nil, err
 	}
