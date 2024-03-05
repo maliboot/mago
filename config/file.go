@@ -83,7 +83,7 @@ func (f *File) GetBaseUrl(path string) string {
 	}
 	switch f.Default {
 	case "oss":
-		return fmt.Sprintf("https://%s.%s%s", f.OSS.Endpoint, f.OSS.Bucket, path)
+		return fmt.Sprintf("https://%s.%s%s", f.OSS.Bucket, f.OSS.Endpoint, path)
 	}
 
 	return ""
