@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime/multipart"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/cloudwego/hertz/pkg/common/hlog"
@@ -114,7 +115,7 @@ func (s *FileStorage) upload(data interface{}, processFunc func(bs []byte), auto
 		if err != nil {
 			return err
 		}
-		fileName = file.Name()
+		fileName = filepath.Base(file.Name())
 		fileSize = fileInfo.Size()
 		fileReader = file
 		multipartFun = func(fn func(part types.Part)) error {
@@ -129,7 +130,7 @@ func (s *FileStorage) upload(data interface{}, processFunc func(bs []byte), auto
 			_ = file.Close()
 		}(file)
 
-		fileName = dataVal.Filename
+		fileName = filepath.Base(dataVal.Filename)
 		fileSize = dataVal.Size
 		fileReader = file
 		multipartFun = func(fn func(part types.Part)) error {
@@ -154,6 +155,7 @@ func (s *FileStorage) upload(data interface{}, processFunc func(bs []byte), auto
 	if processFunc != nil {
 		opts = append(opts, pairs.WithIoCallback(processFunc))
 	}
+
 	_, err := s.ins.Write(fileName, fileReader, fileSize, opts...)
 	if err != nil {
 		return err
