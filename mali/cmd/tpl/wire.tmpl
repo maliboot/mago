@@ -27,14 +27,14 @@ func (c *Container) Inject(s mago.Server)  {
 
 func New{{ .Name }}Conf(c *_mbconf.Conf) *{{ .RefName }}.{{ .Name }} {
 	var conf = struct {
-		c *{{ .RefName }}.{{ .Name }} `yaml:"{{ .LowerName }}"`
+		CF *{{ .RefName }}.{{ .Name }} `yaml:"{{ .LowerName }}"`
 	}{}
 
 	err := c.Scan(&conf)
 	if err != nil {
 		fmt.Printf("custom config decode err:%v", err)
 	}
-	return conf.c
+	return conf.CF
 }{{ end }}
 
 var InjectProviderSet = wire.NewSet(
