@@ -17,6 +17,7 @@ var wireTplTxt string
 type WireAutoloadFunc struct {
 	Name       string
 	LcName     string
+	LowerName  string
 	RefName    string
 	InjectFunc string
 }
@@ -90,6 +91,7 @@ func (w *Wire) Initialize() {
 					w.TplArgs.AutoloadFuncs[node.Name] = &WireAutoloadFunc{
 						Name:       node.Name,
 						LcName:     nodeLcName,
+						LowerName:  strings.ToLower(node.Name),
 						RefName:    node.GetTplRefPrefix(),
 						InjectFunc: "New" + node.Name + "Conf",
 					}
