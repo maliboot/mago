@@ -1,12 +1,14 @@
 package mago
 
+import "strings"
+
 // Error 普通错误
 type Error interface {
 	Code() ErrorCode
 	HttpCode() int
 	Msg() string
 	WithMsg(string) Error
-	AddMsg(string) Error
+	SetTemplate(name string, value string) Error
 	Error() string
 }
 
@@ -14,6 +16,7 @@ type errorContext struct {
 	code     ErrorCode
 	httpCode int
 	msg      string
+	template map[string]string
 }
 
 func NewError(code ErrorCode) Error {
@@ -21,6 +24,7 @@ func NewError(code ErrorCode) Error {
 	ins.code = code
 	ins.httpCode = code.HttpCode()
 	ins.msg = code.String()
+	ins.template = make(map[string]string)
 	return ins
 }
 
@@ -37,12 +41,19 @@ func (e *errorContext) WithMsg(msg string) Error {
 	return e
 }
 
-func (e *errorContext) AddMsg(msg string) Error {
-	e.msg += msg
+func (e *errorContext) SetTemplate(name string, value string) Error {
+	e.template[name] = value
 	return e
 }
 
 func (e *errorContext) Msg() string {
+	if len(e.template) > 0 {
+		newMsg := ""
+		for k, v := range e.template {
+			newMsg = strings.ReplaceAll(e.msg, k, v)
+		}
+		return newMsg
+	}
 	return e.msg
 }
 
