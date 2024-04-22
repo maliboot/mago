@@ -56,6 +56,10 @@ var errMsg = map[ErrorCode]string{
 	ErrServerError:           "服务器异常",
 }
 
+func InitErrorCodeMsg(e ErrorCode, msg string) {
+	errMsg[e] = msg
+}
+
 func (e ErrorCode) String() string {
 	key, _ := strconv.Atoi(fmt.Sprintf("%d", e))
 	newKey := ErrorCode(key)
