@@ -6,6 +6,7 @@ type Error interface {
 	HttpCode() int
 	Msg() string
 	WithMsg(string) Error
+	AddMsg(string) Error
 	Error() string
 }
 
