@@ -36,6 +36,11 @@ func (e *errorContext) WithMsg(msg string) Error {
 	return e
 }
 
+func (e *errorContext) AddMsg(msg string) Error {
+	e.msg += msg
+	return e
+}
+
 func (e *errorContext) Msg() string {
 	return e.msg
 }
