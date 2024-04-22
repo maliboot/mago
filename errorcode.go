@@ -9,6 +9,9 @@ import (
 type ErrorCode int
 
 var (
+	// IsAlwaysHttpCodeOk 是否httpCode总为200
+	IsAlwaysHttpCodeOk bool
+
 	// ErrNone 成功
 	ErrNone ErrorCode = 200
 	// ErrTokenInvalid token失效
@@ -71,6 +74,9 @@ func (e ErrorCode) Int() int {
 }
 
 func (e ErrorCode) HttpCode() int {
+	if IsAlwaysHttpCodeOk {
+		return 200
+	}
 	strCode := fmt.Sprintf("%d", e)
 	strHttpCode := strCode[0:3]
 
