@@ -11,9 +11,9 @@ type LogConf struct {
 }
 
 // LoggerInit 日志初始化
-func (l *LogConf) LoggerInit() (error, func()) {
+func (l *LogConf) LoggerInit(isDev bool) (error, func()) {
 	emptyFunc := func() {}
-	if l.LogDir != "" {
+	if !isDev && l.LogDir != "" {
 		logFile, err := os.OpenFile(l.LogDir+"/output.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			return err, emptyFunc

@@ -78,6 +78,9 @@ func (e ErrorCode) HttpCode() int {
 		return 200
 	}
 	strCode := fmt.Sprintf("%d", e)
+	if len(strCode) < 3 {
+		return 200
+	}
 	strHttpCode := strCode[0:3]
 
 	httpCode, _ := strconv.Atoi(strHttpCode)

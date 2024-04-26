@@ -78,7 +78,7 @@ func (c *Conf) Bootstrap() error {
 	}
 
 	// 日志
-	err, _ := c.Log.LoggerInit()
+	err, _ := c.Log.LoggerInit(c.AppEnv == Dev)
 	if err != nil {
 		return err
 	}
