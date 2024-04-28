@@ -42,8 +42,9 @@ type File struct {
 }
 
 type FileStorage struct {
-	name string
-	ins  types.Storager
+	name            string
+	ins             types.Storager
+	uploadChunkSize int64
 }
 
 func (f *File) GetStorage(workDir string) (*FileStorage, error) {
@@ -72,6 +73,7 @@ func (f *File) GetStorage(workDir string) (*FileStorage, error) {
 	var err error
 	fs.name = f.Default
 	fs.ins, err = services.NewStoragerFromString(connStr)
+	fs.uploadChunkSize = 1024 * 1024 * 5
 	return &fs, err
 }
 
@@ -92,6 +94,10 @@ func (f *File) GetBaseUrl(path string) string {
 
 func (s *FileStorage) Stat(path string) (*types.Object, error) {
 	return s.ins.Stat(path)
+}
+
+func (s *FileStorage) SetUploadChunkSize(chunkSize int64) {
+	s.uploadChunkSize = chunkSize
 }
 
 func (s *FileStorage) upload(data interface{}, processFunc func(bs []byte), auto bool) error {
@@ -214,7 +220,7 @@ func (s *FileStorage) multipartUpload(filePath string, fileSize int64, readerAt 
 	}
 
 	// 设置每个分片的大小,2MB
-	partSize := int64(2 * 1024 * 1024)
+	partSize := s.uploadChunkSize
 	// 计算分片数量
 	partNumber := int(fileSize/partSize) + 1
 
