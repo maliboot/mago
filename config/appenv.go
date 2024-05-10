@@ -1,16 +1,18 @@
 package config
 
-type AppEnv int
+import "strings"
+
+type AppEnv string
 
 const (
 	// Dev 开发环境
-	Dev = 0
+	Dev = "dev"
 	// Test 测试环境
-	Test = 1
+	Test = "test"
 	// Gray 灰度环境
-	Gray = 2
+	Gray = "gray"
 	// Production 正式环境
-	Production = 3
+	Production = "production"
 )
 
 func (e AppEnv) String() string {
@@ -26,7 +28,8 @@ func (e AppEnv) String() string {
 }
 
 func AppEnvFromStr(e string) AppEnv {
-	switch e {
+	appEnv := strings.ToLower(e)
+	switch appEnv {
 	case "dev":
 		return Dev
 	case "test":

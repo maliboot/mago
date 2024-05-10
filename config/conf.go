@@ -2,15 +2,13 @@ package config
 
 import (
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"io"
 	"os"
-	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 type Conf struct {
-	AppEnv    AppEnv
+	AppEnv    AppEnv `yaml:"app_env"`
 	AppName   string `yaml:"app_name"`
 	filePath  string
 	Server    *ServerConf              `yaml:"server"`
@@ -25,7 +23,10 @@ func NewConf(opts ...ConfOption) *Conf {
 		o(&c)
 	}
 
-	c.AppEnv = AppEnvFromStr(strings.ToLower(os.Getenv("APP_ENV")))
+	if c.AppEnv == "" {
+		c.AppEnv = AppEnvFromStr(os.Getenv("APP_ENV"))
+	}
+
 	if c.filePath == "" {
 		c.Server = &ServerConf{
 			Http: HttpConf{Port: 9501},
