@@ -57,7 +57,7 @@ func TestToSnakeJson(t *testing.T) {
       {
         "msgData": {
           "title": "我是群发title",
-          "iconUrl": "https://wework.qpic.cn/wwpic3az/59411_H0x4p2RNQHmdDjh_1709274772/0",
+          "iconUrl": "https://wework.qpic.cn/wwpic3az/594122222HmdDjh_1709274772/0",
           "linkUrl": "https://www.baidu.com",
           "desc": "我是群发desc"
         },
@@ -66,19 +66,16 @@ func TestToSnakeJson(t *testing.T) {
     ],
     "send_type": 0,
     "toIdList": [
-      "7881303048045815",
-      "7881302321987664",
-      "7881300452930187"
+      "123",
+      "345",
+      "567"
     ]
   },
-  "syncKey": "1709541456928768300",
+  "syncKey": "234567",
   "type": 5400
 }
 `
-	snakeJson := `{"data":{"msg_list":[{"msg_data":{"content":"我是群发-文本类型"},"type":0
-      },{"msg_data":{"title":"我是群发title","icon_url":"https://wework.qpic.cn/wwpic3az/59411_H0x4p2RNQHmdDjh_1709274772/0","link_url":"https://www.baidu.com","desc":"我是群发desc"},"type":13
-      }],"send_type":0,"to_id_list":["7881303048045815","7881302321987664","7881300452930187"]},"sync_key":"1709541456928768300","type":5400
-}`
+	snakeJson := `{"data":{"msg_list":[{"msg_data":{"content":"我是群发-文本类型"},"type":0},{"msg_data":{"desc":"我是群发desc","icon_url":"https://wework.qpic.cn/wwpic3az/594122222HmdDjh_1709274772/0","link_url":"https://www.baidu.com","title":"我是群发title"},"type":13}],"send_type":0,"to_id_list":["123","345","567"]},"sync_key":"234567","type":5400}`
 	tests := []struct {
 		name    string
 		args    args

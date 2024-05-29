@@ -2,11 +2,11 @@ package mago
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
 
-	"github.com/bytedance/sonic"
 	"gorm.io/gorm/schema"
 )
 
@@ -16,9 +16,9 @@ type DateTime struct {
 
 func (t *DateTime) MarshalJSON() ([]byte, error) {
 	if !t.Time.IsZero() {
-		return sonic.Marshal(fmt.Sprintf("%s", t.Format("2006-01-02 15:04:05")))
+		return json.Marshal(fmt.Sprintf("%s", t.Format("2006-01-02 15:04:05")))
 	}
-	return sonic.Marshal(nil)
+	return json.Marshal(nil)
 }
 
 func (t *DateTime) UnmarshalJSON(data []byte) error {

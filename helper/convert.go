@@ -1,105 +1,99 @@
 package helper
 
 import (
-	"fmt"
-	"strings"
-
-	"github.com/bytedance/sonic"
-	"github.com/bytedance/sonic/ast"
+	"encoding/json"
 	"github.com/iancoleman/strcase"
 )
 
 func Marshal(object interface{}) ([]byte, error) {
 	var output []byte
-	output, err := sonic.Marshal(object)
+	output, err := json.Marshal(object)
 	if err != nil {
 		return nil, err
 	}
 	return output, nil
 }
 
-func Unmarshal[S any](json []byte) (*S, error) {
+func Unmarshal[S any](jsonData []byte) (*S, error) {
 	var s = new(S)
-	err := sonic.Unmarshal(json, s)
+	err := json.Unmarshal(jsonData, s)
 	return s, err
 }
 
 func ToLowerCamelJson(snakeJson []byte) ([]byte, error) {
-	root, err := sonic.Get(snakeJson)
+	var data interface{}
+	err := json.Unmarshal(snakeJson, &data)
 	if err != nil {
 		return nil, err
 	}
 
-	if !root.Valid() {
-		return nil, fmt.Errorf("snakeJson转camelJson解析失败，json:%s", snakeJson)
-	}
-
-	newRoot := recursionJsonNode(root, func(key string) string {
-		if !strings.Contains(key, "_") {
-			return key
-		}
-		return strcase.ToLowerCamel(key)
-	})
-	return newRoot.MarshalJSON()
+	result := convertKeysCase(data, false)
+	return json.Marshal(result)
 }
 
 func ToSnakeJson(lowerCamelJson []byte) ([]byte, error) {
-	root, err := sonic.Get(lowerCamelJson)
+	var data interface{}
+	err := json.Unmarshal(lowerCamelJson, &data)
 	if err != nil {
 		return nil, err
 	}
 
-	if !root.Valid() {
-		return nil, fmt.Errorf("camelJson转解析失败，json:%s", lowerCamelJson)
+	result := convertKeysCase(data, true)
+	return json.Marshal(result)
+}
+
+func convertKeysCase(input interface{}, isSnake bool) interface{} {
+	switch value := input.(type) {
+	case map[string]interface{}:
+		outputMap := make(map[string]interface{})
+		for key, val := range value {
+			var caseKey string
+			if isSnake {
+				caseKey = strcase.ToSnake(key)
+			} else {
+				caseKey = strcase.ToLowerCamel(key)
+			}
+			outputMap[caseKey] = convertKeysCase(val, isSnake)
+		}
+		return outputMap
+	case []interface{}:
+		for i, item := range value {
+			value[i] = convertKeysCase(item, isSnake)
+		}
+		return value
+	default:
+		return input
 	}
-
-	newRoot := recursionJsonNode(root, func(key string) string {
-		return strcase.ToSnake(key)
-	})
-	return newRoot.MarshalJSON()
 }
 
-func recursionJsonNode(root ast.Node, keyFunc func(key string) string) ast.Node {
-	_ = root.ForEach(func(path ast.Sequence, node *ast.Node) bool {
-		if path.Index < 0 {
-			return false
-		}
-
-		if path.Key != nil && keyFunc != nil {
-			root.IndexPair(path.Index).Key = keyFunc(*path.Key)
-		}
-
-		nodeType := node.Type()
-		if nodeType == 5 || nodeType == 6 {
-			_, _ = root.SetByIndex(path.Index, recursionJsonNode(*node, keyFunc))
-		}
-		return true
-	})
-
-	return root
-}
-
-// Convertor 默认转字段key为小驼峰
 func Convertor[S any](source interface{}) (*S, error) {
 	if source == nil {
 		return nil, nil
 	}
-	json, err := Marshal(source)
+	jsonData, err := Marshal(source)
 	if err != nil {
 		return nil, err
 	}
+	return Unmarshal[S](jsonData)
+}
 
-	camelJson, err := ToLowerCamelJson(json)
+func LowerCamelConvertor[S any](source interface{}) (*S, error) {
+	if source == nil {
+		return nil, nil
+	}
+	jsonData, err := Marshal(source)
 	if err != nil {
 		return nil, err
 	}
+	if _, ok := source.(json.Marshaler); ok {
+		return Unmarshal[S](jsonData)
+	}
 
-	des, err := Unmarshal[S](camelJson)
+	camelJson, err := ToLowerCamelJson(jsonData)
 	if err != nil {
 		return nil, err
 	}
-
-	return des, err
+	return Unmarshal[S](camelJson)
 }
 
 // SnakeConvertor 默认转字段key为蛇形
@@ -107,20 +101,17 @@ func SnakeConvertor[S any](source interface{}) (*S, error) {
 	if source == nil {
 		return nil, nil
 	}
-	json, err := Marshal(source)
+	jsonData, err := Marshal(source)
 	if err != nil {
 		return nil, err
 	}
+	if _, ok := source.(json.Marshaler); ok {
+		return Unmarshal[S](jsonData)
+	}
 
-	camelJson, err := ToSnakeJson(json)
+	camelJson, err := ToSnakeJson(jsonData)
 	if err != nil {
 		return nil, err
 	}
-
-	des, err := Unmarshal[S](camelJson)
-	if err != nil {
-		return nil, err
-	}
-
-	return des, err
+	return Unmarshal[S](camelJson)
 }
