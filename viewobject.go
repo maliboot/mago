@@ -22,6 +22,26 @@ type VO[T any] struct {
 }
 
 func NewVO[T any](err error, data interface{}) *VO[T] {
+	return NewConvertorVO[T](err, data, 0)
+}
+
+func NewLowerCamelVO[T any](err error, data interface{}) *VO[T] {
+	return NewConvertorVO[T](err, data, 1)
+}
+
+func NewSnakeVO[T any](err error, data interface{}) *VO[T] {
+	return NewConvertorVO[T](err, data, 2)
+}
+
+func NewZeroVO[T any]() *VO[T] {
+	vo := &VO[T]{
+		IsZero: true,
+	}
+
+	return vo
+}
+
+func NewConvertorVO[T any](err error, data interface{}, convertType int) *VO[T] {
 	vo := &VO[T]{
 		Err: err,
 	}
@@ -34,15 +54,16 @@ func NewVO[T any](err error, data interface{}) *VO[T] {
 	if ok {
 		vo.Data = myData
 	} else {
-		vo.Data, _ = helper.Convertor[T](data)
-	}
-
-	return vo
-}
-
-func NewZeroVO[T any]() *VO[T] {
-	vo := &VO[T]{
-		IsZero: true,
+		switch convertType {
+		case 1:
+			vo.Data, _ = helper.LowerCamelConvertor[T](data)
+			break
+		case 2:
+			vo.Data, _ = helper.SnakeConvertor[T](data)
+			break
+		default:
+			vo.Data, _ = helper.Convertor[T](data)
+		}
 	}
 
 	return vo
