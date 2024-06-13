@@ -31,6 +31,20 @@ func ToLowerCamelJson(snakeJson []byte) ([]byte, error) {
 	return json.Marshal(result)
 }
 
+func MapFormatCase(data map[string]interface{}, toSnake bool) map[string]interface{} {
+	result := convertKeysCase(data, toSnake)
+	return result.(map[string]interface{})
+}
+
+func ArrayMapFormatCase(data []map[string]interface{}, toSnake bool) []map[string]interface{} {
+	result := make([]map[string]interface{}, len(data))
+
+	for i, datum := range data {
+		result[i] = convertKeysCase(datum, toSnake).(map[string]interface{})
+	}
+	return result
+}
+
 func ToSnakeJson(lowerCamelJson []byte) ([]byte, error) {
 	var data interface{}
 	err := json.Unmarshal(lowerCamelJson, &data)

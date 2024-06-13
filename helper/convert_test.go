@@ -101,3 +101,35 @@ func TestToSnakeJson(t *testing.T) {
 		})
 	}
 }
+
+func TestArrayMapFormatCase(t *testing.T) {
+	type args struct {
+		data    []map[string]interface{}
+		toSnake bool
+	}
+	tests := []struct {
+		name string
+		args args
+		want []map[string]interface{}
+	}{
+		{
+			name: "ArrayMapFormatCase",
+			args: args{
+				data: []map[string]interface{}{
+					{"foo_id": 1, "foo_name": "foo_name"},
+				},
+				toSnake: false,
+			},
+			want: []map[string]interface{}{
+				{"fooId": 1, "fooName": "foo_name"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ArrayMapFormatCase(tt.args.data, tt.args.toSnake); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ArrayMapFormatCase() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
