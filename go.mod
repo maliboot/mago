@@ -4,11 +4,13 @@ go 1.21.4
 
 require (
 	github.com/cloudwego/hertz v0.8.1
+	github.com/hertz-contrib/logger/slog v1.0.0
 	github.com/iancoleman/strcase v0.3.0
 	go.beyondstorage.io/services/cos/v3 v3.0.0
 	go.beyondstorage.io/services/oss/v3 v3.0.0
 	go.beyondstorage.io/v5 v5.0.0
 	golang.org/x/sync v0.7.0
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/mysql v1.5.6
 	gorm.io/gorm v1.25.10
@@ -41,6 +43,7 @@ require (
 	github.com/nyaruka/phonenumbers v1.0.55 // indirect
 	github.com/pelletier/go-toml v1.9.4 // indirect
 	github.com/russross/blackfriday/v2 v2.0.1 // indirect
+	github.com/shurcooL/sanitized_anchor_name v1.0.0 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/tencentyun/cos-go-sdk-v5 v0.7.31 // indirect
 	github.com/tidwall/gjson v1.14.4 // indirect
@@ -55,5 +58,6 @@ require (
 	golang.org/x/sys v0.17.0 // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
 	golang.org/x/tools v0.1.1 // indirect
+	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	google.golang.org/protobuf v1.27.1 // indirect
 )
