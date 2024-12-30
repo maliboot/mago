@@ -14,6 +14,8 @@ var (
 
 	// ErrNone 成功
 	ErrNone ErrorCode = 200
+	// ErrTimeout 请求超时
+	ErrTimeout ErrorCode = 400408
 	// ErrTokenInvalid token失效
 	ErrTokenInvalid ErrorCode = 401000
 	// ErrAuthLoginFailed 用户或密码错误
@@ -44,6 +46,7 @@ var (
 
 var errMsg = map[ErrorCode]string{
 	ErrNone:                  "成功",
+	ErrTimeout:               "请求超时",
 	ErrTokenInvalid:          "token失效",
 	ErrAuthLoginFailed:       "用户或密码错误",
 	ErrAuthTokenInvalid:      "非法token",
@@ -85,4 +88,12 @@ func (e ErrorCode) HttpCode() int {
 
 	httpCode, _ := strconv.Atoi(strHttpCode)
 	return httpCode
+}
+
+func (e ErrorCode) Error() Error {
+	return NewError(e)
+}
+
+func (e ErrorCode) ErrorWithMsg(msg string) Error {
+	return NewError(e).WithMsg(msg)
 }
