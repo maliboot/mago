@@ -39,6 +39,7 @@ type File struct {
 		SecretKey string `yaml:"secret_key"`
 		Bucket    string `yaml:"bucket"`
 	}
+	Ctx any
 }
 
 type FileStorage struct {

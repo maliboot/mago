@@ -15,6 +15,7 @@ type DataBaseConf struct {
 	SingularTable bool   `yaml:"singular_table"`
 	NoLowerCase   bool   `yaml:"no_lower_case"`
 	dbConnector   *dbConnector
+	Ctx           any
 }
 
 type dbConnector struct {

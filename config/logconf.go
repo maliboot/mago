@@ -13,6 +13,7 @@ import (
 type LogConf struct {
 	lumberjack.Logger
 	LogDir string `yaml:"log_dir"`
+	Ctx    any
 }
 
 // LoggerInit 日志初始化
