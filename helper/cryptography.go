@@ -14,11 +14,11 @@ func AesGcmEncrypt(data, aesKey []byte) ([]byte, error) {
 	if data == nil || len(data) == 0 {
 		return make([]byte, 0), nil
 	}
-	iv := make([]byte, aes.BlockSize)
-	if len(data) < aes.BlockSize {
+	iv := make([]byte, 12)
+	if len(data) < 12 {
 		_, _ = crand.Read(iv)
 	} else {
-		copy(iv, data[:aes.BlockSize])
+		copy(iv, data[:12])
 	}
 	return AesGcmEncryptWithIv(data, aesKey, iv)
 }
@@ -27,9 +27,9 @@ func AesGcmDecrypt(data []byte, aesKey []byte) ([]byte, error) {
 	if data == nil || len(data) == 0 {
 		return make([]byte, 0), nil
 	}
-	iv := make([]byte, aes.BlockSize)
-	copy(iv, data[:aes.BlockSize])
-	ciphertext := data[aes.BlockSize:]
+	iv := make([]byte, 12)
+	copy(iv, data[:12])
+	ciphertext := data[12:]
 	return AesGcmDecryptWithIv(ciphertext, aesKey, iv)
 }
 
