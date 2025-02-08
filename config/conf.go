@@ -15,6 +15,7 @@ type Conf struct {
 	Log       *LogConf                 `yaml:"logger"`
 	Databases map[string]*DataBaseConf `yaml:"databases"`
 	File      *File                    `yaml:"file"`
+	Redis     *Redis                   `yaml:"redis"`
 	Ctx       any
 }
 
