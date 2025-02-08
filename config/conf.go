@@ -2,15 +2,17 @@ package config
 
 import (
 	"fmt"
-	"gopkg.in/yaml.v3"
 	"io"
 	"os"
+
+	"gopkg.in/yaml.v3"
 )
 
 type Conf struct {
 	AppEnv    AppEnv `yaml:"app_env"`
 	AppName   string `yaml:"app_name"`
 	filePath  string
+	Workspace string                   `yaml:"workspace"`
 	Server    *ServerConf              `yaml:"server"`
 	Log       *LogConf                 `yaml:"logger"`
 	Databases map[string]*DataBaseConf `yaml:"databases"`
@@ -87,4 +89,26 @@ func (c *Conf) Bootstrap() error {
 	}
 
 	return nil
+}
+
+func (c *Conf) GetWorkspace() string {
+	if c.Workspace != "" {
+		return c.Workspace
+	}
+
+	dir, err := os.UserHomeDir()
+	if err != nil {
+		c.Workspace = os.TempDir() + "." + c.AppName
+	} else {
+		c.Workspace = dir + string(os.PathSeparator) + "." + c.AppName
+	}
+
+	if _, err = os.Stat(c.Workspace); err != nil {
+		err = os.Mkdir(c.Workspace, 0755)
+		if err != nil {
+			fmt.Printf("创建工作目录[%s]失败:[%+v]", c.Workspace, err)
+		}
+	}
+
+	return c.Workspace
 }
