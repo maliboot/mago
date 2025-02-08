@@ -41,6 +41,9 @@ func (dc *DataBaseConf) initDbConnector() {
 		dialector = mysql.New(mysql.Config{DSN: dc.Dsn})
 		break
 	case "sqlite":
+		if dc.Dsn == "" {
+			dc.Dsn = "file::memory:?cache=shared"
+		}
 		dialector = sqlite.Open(dc.Dsn)
 		break
 	default:
