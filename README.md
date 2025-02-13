@@ -1,33 +1,41 @@
 # Mago
 
 #### 简介
+
 * 这是一个`maliboot`框架的golang版本。
 * 为了满足`phper`的使用习惯，组件设计、注解(基于google/wire)尽可能的使用了`hyperf`的许多规范。
 * 路由组件使用的是`hertz`，数据库组件使用了`gorm`
 
 #### 准备
-* golang >= 1.21
+
+* golang >= 1.24
 * make
 
 #### 安装
+
 ```shell
 go install github.com/maliboot/mago/mali@latest
 ```
 
 #### 创建新项目(模块)
+
 * 初始化项目
+
 ```shell
 mkdir mago-skeleton
 cd mago-skeleton
 go mod init
 ```
+
 * 初始化`maliboot`骨架
+
 ```shell
 cd mago-skeleton
 mali init
 ```
 
 * 生成文件如下
+
 ```
 .
 ├── Makefile
@@ -50,7 +58,9 @@ mali init
 ```
 
 #### 批量生成`CURD`代码
+
 * 修改数据库配置 `mago-skeleton/conf.yml`
+
 ```yaml
 app_name: example
 app_env: dev
@@ -71,6 +81,7 @@ redis:
 ```
 
 * 使用`cli`工具批量生成`cola`代码
+
 ```shell
 cd mago-skeleton
 ## example为数据库名称，uss_message_tpl_var为表名。当无数据库名称时，会默认取`mago-skeleton/conf.yml`里第一个数据库
@@ -78,6 +89,7 @@ mali curd -t=example.uss_message_tpl_var
 ```
 
 > 注意：当使用了注解路由时，需要在`mago-skeleton/main.go`中解开`*Container`注释。另外，`mali curd`默认生成的是注解路由
+
 ``` go
 package main
 
@@ -128,17 +140,21 @@ func main() {
 ```
 
 #### 依赖注入
+
 * 本框架使用了`google/wire`来进行代码依赖注入
 * 本框架的注解功能依赖于`google/wire`组件
 
 项目运行前，需要在当前项目下运行依赖注入命令
+
 ```shell
 cd mago-skeleton
 make wire
 ```
 
 #### 使用
+
 * 运行服务
+
 ```
 cd mago-skeleton
 go run main

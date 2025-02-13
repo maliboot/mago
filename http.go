@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/maliboot/mago/config"
-
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
+	"github.com/maliboot/mago/config"
 )
 
 type Http struct {
