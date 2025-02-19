@@ -1,6 +1,7 @@
 package helper
 
 import (
+	"bytes"
 	"encoding/json"
 
 	"github.com/iancoleman/strcase"
@@ -18,6 +19,16 @@ func Marshal(object interface{}) ([]byte, error) {
 func Unmarshal[S any](jsonData []byte) (*S, error) {
 	var s = new(S)
 	err := json.Unmarshal(jsonData, s)
+	return s, err
+}
+
+func UnmarshalUseNumber[S any](jsonData []byte) (*S, error) {
+	var s = new(S)
+
+	d := json.NewDecoder(bytes.NewReader(jsonData))
+	d.UseNumber()
+	err := d.Decode(s)
+
 	return s, err
 }
 
