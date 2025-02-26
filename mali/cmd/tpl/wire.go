@@ -126,11 +126,28 @@ func (w *Wire) Initialize() {
 				}
 
 				rmAttr := attr.(*attribute.RequestMapping)
+				for _, cMiddleware := range rController.Middlewares {
+					if !slices.Contains(rmAttr.Middlewares, cMiddleware) {
+						rmAttr.Middlewares = append(rmAttr.Middlewares, cMiddleware)
+					}
+				}
+
+				wireMiddles := make([]string, 0)
+				for _, mMiddleware := range rmAttr.Middlewares {
+					implNode := mbast.NewNodeFormString(mMiddleware, mbast.FuncType, nil)
+					implNode.ResetAlias(w.nodes)
+					if _, ok := w.TplArgs.Imports[implNode.PackageFQN]; !ok {
+						w.TplArgs.Imports[implNode.PackageFQN] = implNode.PackageAlias
+					}
+					wireMiddles = append(wireMiddles, implNode.GetTplRef())
+				}
+
 				finalPath := rmAttr.GetPathByPrefix(rController.Prefix)
 				w.TplArgs.Routers[nReceiverRef].Methods[nodeRef] = &WireMethods{
-					Name:    node.Name,
-					Path:    finalPath,
-					Methods: rmAttr.Methods,
+					Name:            node.Name,
+					Path:            finalPath,
+					Methods:         rmAttr.Methods,
+					MiddlewaresPack: strings.Join(wireMiddles, ", "),
 				}
 			}
 		}

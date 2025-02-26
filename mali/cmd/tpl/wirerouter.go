@@ -1,9 +1,10 @@
 package tpl
 
 type WireMethods struct {
-	Name    string
-	Path    string
-	Methods []string
+	Name            string
+	Path            string
+	Methods         []string
+	MiddlewaresPack string
 }
 
 type WireController struct {

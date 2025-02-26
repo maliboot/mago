@@ -1,7 +1,8 @@
 package attribute
 
 type Controller struct {
-	Prefix string
+	Prefix      string
+	Middlewares []string
 }
 
 func (c *Controller) Name() string {
@@ -15,11 +16,17 @@ func (c *Controller) FQN() string {
 func (c *Controller) InitArgs(args map[string]string) Attribute {
 	if path, ok := args["0"]; ok {
 		c.Prefix = path
+		if middlewares, ok := args["1"]; ok {
+			c.Middlewares = formatMiddlewaresDoc(middlewares)
+		}
 		return c
 	}
 
-	if path, ok := args["Prefix"]; ok {
+	if path, ok := args["prefix"]; ok {
 		c.Prefix = path
+	}
+	if middlewares, ok := args["middlewares"]; ok {
+		c.Middlewares = formatMiddlewaresDoc(middlewares)
 	}
 	return c
 }

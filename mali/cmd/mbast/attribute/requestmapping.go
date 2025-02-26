@@ -7,8 +7,9 @@ import (
 )
 
 type RequestMapping struct {
-	Path    string
-	Methods []string
+	Path        string
+	Methods     []string
+	Middlewares []string
 }
 
 func (r *RequestMapping) Name() string {
@@ -24,6 +25,10 @@ func (r *RequestMapping) InitArgs(args map[string]string) Attribute {
 		r.Path = path
 		if methods, ok := args["1"]; ok {
 			r.Methods = r.formatMethodsDoc(methods)
+		}
+
+		if middlewares, ok := args["2"]; ok {
+			r.Middlewares = formatMiddlewaresDoc(middlewares)
 			return r
 		} else {
 			hlog.Errorf("注解[RequestMapping]参数异常, Path:[%s], args:%s", r.Path, args)
@@ -37,6 +42,9 @@ func (r *RequestMapping) InitArgs(args map[string]string) Attribute {
 	}
 	if methods, ok := args["methods"]; ok {
 		r.Methods = r.formatMethodsDoc(methods)
+	}
+	if middlewares, ok := args["middlewares"]; ok {
+		r.Middlewares = formatMiddlewaresDoc(middlewares)
 	}
 	return r
 }

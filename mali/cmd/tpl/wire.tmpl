@@ -19,7 +19,7 @@ func (c *Container) Inject(s mago.Server)  {
         {{- range $rcKey, $rcValue := .TplArgs.Routers }}
         {{- range $rmKey, $rmValue := $rcValue.Methods }}
         {{- range $rmIndex, $rm := $rmValue.Methods }}
-        http.{{ $rm }}("{{ $rmValue.Path }}", c.{{ $rcValue.Uniqid }}.{{ $rmValue.Name }}){{ end }}{{ end }}{{ end }}
+        http.{{ $rm }}("{{ $rmValue.Path }}", c.{{ $rcValue.Uniqid }}.{{ $rmValue.Name }}{{ $rmValue.MiddlewaresPack }}){{ end }}{{ end }}{{ end }}
 	}
 }
 
