@@ -221,3 +221,19 @@ func (j *JWTConf) CheckIfTokenExpire(ctx context.Context, c *app.RequestContext)
 	_, err := j.hertzJWT.CheckIfTokenExpire(ctx, c)
 	return err
 }
+
+func (j *JWTConf) MiddlewareFunc() app.HandlerFunc {
+	return j.hertzJWT.MiddlewareFunc()
+}
+
+func (j *JWTConf) LoginHandler() app.HandlerFunc {
+	return j.hertzJWT.LoginHandler
+}
+
+func (j *JWTConf) RefreshHandler() app.HandlerFunc {
+	return j.hertzJWT.RefreshHandler
+}
+
+func (j *JWTConf) LogoutHandler() app.HandlerFunc {
+	return j.hertzJWT.LogoutHandler
+}
