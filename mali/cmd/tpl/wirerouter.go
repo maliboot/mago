@@ -4,6 +4,7 @@ type WireMethods struct {
 	Name            string
 	Path            string
 	Methods         []string
+	Auth            string
 	MiddlewaresPack string
 }
 

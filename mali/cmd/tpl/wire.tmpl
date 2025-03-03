@@ -14,12 +14,12 @@ type Container struct {
     {{ $rcValue.Uniqid }} *{{ $rcKey }}{{ end }}
 }
 
-func (c *Container) Inject(s mago.Server)  {
+func (c *Container) Inject(s mago.Server, conf *_mbconf.Conf)  {
 	if http,ok := s.(*mago.Http); ok {
         {{- range $rcKey, $rcValue := .TplArgs.Routers }}
         {{- range $rmKey, $rmValue := $rcValue.Methods }}
         {{- range $rmIndex, $rm := $rmValue.Methods }}
-        http.{{ $rm }}("{{ $rmValue.Path }}", c.{{ $rcValue.Uniqid }}.{{ $rmValue.Name }}{{ $rmValue.MiddlewaresPack }}){{ end }}{{ end }}{{ end }}
+        http.{{ $rm }}("{{ $rmValue.Path }}", c.{{ $rcValue.Uniqid }}.{{ $rmValue.Name }}{{if ne $rmValue.Auth ""}}, conf.Server.Http.JWT["{{$rmValue.Auth}}"].MiddlewareFunc(){{end}}{{ $rmValue.MiddlewaresPack }}){{ end }}{{ end }}{{ end }}
 	}
 }
 

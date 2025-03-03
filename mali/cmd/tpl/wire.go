@@ -142,11 +142,18 @@ func (w *Wire) Initialize() {
 					wireMiddles = append(wireMiddles, implNode.GetTplRef())
 				}
 
+				// auth
+				auth := rmAttr.Auth
+				if auth == "" && rController.Auth != "" {
+					auth = rController.Auth
+				}
+
 				finalPath := rmAttr.GetPathByPrefix(rController.Prefix)
 				w.TplArgs.Routers[nReceiverRef].Methods[nodeRef] = &WireMethods{
 					Name:            node.Name,
 					Path:            finalPath,
 					Methods:         rmAttr.Methods,
+					Auth:            auth,
 					MiddlewaresPack: strings.Join(wireMiddles, ", "),
 				}
 			}
