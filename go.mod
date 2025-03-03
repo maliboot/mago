@@ -4,6 +4,7 @@ go 1.24
 
 require (
 	github.com/cloudwego/hertz v0.9.5
+	github.com/hertz-contrib/jwt v1.0.2
 	github.com/hertz-contrib/logger/slog v1.0.0
 	github.com/iancoleman/strcase v0.3.0
 	github.com/redis/go-redis/v9 v9.7.0
@@ -35,6 +36,7 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/go-sql-driver/mysql v1.8.1 // indirect
+	github.com/golang-jwt/jwt/v4 v4.4.1 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
