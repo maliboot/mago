@@ -41,7 +41,6 @@ type JWTUser interface {
 }
 
 type JWTConf struct {
-	Enable     bool          `yaml:"enable"`
 	Algorithm  string        `yaml:"algorithm"`
 	Realm      string        `yaml:"realm"`
 	Timeout    time.Duration `yaml:"timeout"`
@@ -68,10 +67,10 @@ func (j *JWTConf) initialize() {
 	if j.Secret == "" {
 		j.Secret = "mali secret key"
 	}
-	j.ResetUserConfig(j.user)
 }
 
 func (j *JWTConf) ResetUserConfig(u JWTUser) {
+	j.initialize()
 	if u == nil {
 		return
 	}
