@@ -138,10 +138,15 @@ func (j *JWTConf) jwtMiddlewareInit() (*jwt.HertzJWTMiddleware, error) {
 		Authorizator: func(data interface{}, ctx context.Context, c *app.RequestContext) bool {
 			// data: IdentityHandler()
 			// 此处引入动态用户校验
-			if v, ok := data.(string); ok && j.user != nil && j.user.Validate() != nil {
+			v, ok := data.(string)
+			if ok && j.user != nil && j.user.Validate() != nil {
 				return (j.user.Validate())(v)
 			}
 
+			// 方便无侵入参数绑定
+			if j.user != nil && j.user.IdentityKey() != "" {
+				c.QueryArgs().Add("__"+j.user.IdentityKey()+"__", v)
+			}
 			return true
 		},
 		Unauthorized: func(ctx context.Context, c *app.RequestContext, code int, message string) {
