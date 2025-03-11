@@ -2,10 +2,12 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
+	rawjwt "github.com/golang-jwt/jwt/v4"
 	"github.com/hertz-contrib/jwt"
 )
 
@@ -221,9 +223,33 @@ func (j *JWTConf) TokenGenerator(payload interface{}) (string, time.Time, error)
 	return j.hertzJWT.TokenGenerator(payload)
 }
 
-func (j *JWTConf) CheckIfTokenExpire(ctx context.Context, c *app.RequestContext) error {
-	_, err := j.hertzJWT.CheckIfTokenExpire(ctx, c)
-	return err
+func (j *JWTConf) ParseTokenString(tokenStr string) (*rawjwt.Token, error) {
+	return j.hertzJWT.ParseTokenString(tokenStr)
+}
+
+func (j *JWTConf) CheckIfTokenExpire(ctx context.Context, c *app.RequestContext) (rawjwt.MapClaims, error) {
+	return j.hertzJWT.CheckIfTokenExpire(ctx, c)
+}
+
+func (j *JWTConf) CheckIfTokenExpireByTokenString(tokenStr string) (rawjwt.MapClaims, error) {
+	token, err := j.hertzJWT.ParseTokenString(tokenStr)
+	if err != nil {
+		var validationErr *rawjwt.ValidationError
+		ok := errors.As(err, &validationErr)
+		if !ok || validationErr.Errors != rawjwt.ValidationErrorExpired {
+			return nil, err
+		}
+	}
+
+	claims := token.Claims.(rawjwt.MapClaims)
+
+	origIat := int64(claims["orig_iat"].(float64))
+
+	if origIat < j.hertzJWT.TimeFunc().Add(-j.hertzJWT.MaxRefresh).Unix() {
+		return nil, jwt.ErrExpiredToken
+	}
+
+	return claims, nil
 }
 
 func (j *JWTConf) MiddlewareFunc() app.HandlerFunc {
