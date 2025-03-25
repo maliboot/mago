@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -202,18 +203,21 @@ func (j *JWTConf) jwtMiddlewareInit() (*jwt.HertzJWTMiddleware, error) {
 }
 
 func (j *JWTConf) SetTimeout(t time.Duration) {
+	j.Timeout = t
 	if j.hertzJWT != nil {
 		j.hertzJWT.Timeout = t
 	}
 }
 
 func (j *JWTConf) SetMaxRefresh(t time.Duration) {
+	j.MaxRefresh = t
 	if j.hertzJWT != nil {
 		j.hertzJWT.MaxRefresh = t
 	}
 }
 
 func (j *JWTConf) SetSecret(s string) {
+	j.Secret = s
 	if j.hertzJWT != nil {
 		j.hertzJWT.Key = []byte(s)
 	}
@@ -243,12 +247,33 @@ func (j *JWTConf) CheckIfTokenExpireByTokenString(tokenStr string) (rawjwt.MapCl
 
 	claims := token.Claims.(rawjwt.MapClaims)
 
+	// 检查令牌是否超过了最大刷新时间限制
 	origIat := int64(claims["orig_iat"].(float64))
-
 	if origIat < j.hertzJWT.TimeFunc().Add(-j.hertzJWT.MaxRefresh).Unix() {
 		return nil, jwt.ErrExpiredToken
 	}
 
+	// 检查令牌是否超过了过期时间限制
+	switch v := claims["exp"].(type) {
+	case nil:
+		return nil, jwt.ErrMissingExpField
+	case float64:
+		if int64(v) < j.hertzJWT.TimeFunc().Unix() {
+			return nil, jwt.ErrExpiredToken
+		}
+		break
+	case json.Number:
+		n, err := v.Int64()
+		if err != nil {
+			return nil, jwt.ErrWrongFormatOfExp
+		}
+		if n < j.hertzJWT.TimeFunc().Unix() {
+			return nil, jwt.ErrExpiredToken
+		}
+		break
+	default:
+		return nil, jwt.ErrWrongFormatOfExp
+	}
 	return claims, nil
 }
 
