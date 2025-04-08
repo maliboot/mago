@@ -58,5 +58,5 @@ func (e *errorContext) Msg() string {
 }
 
 func (e *errorContext) Error() string {
-	return e.msg
+	return e.Msg()
 }
