@@ -44,6 +44,7 @@ type JWTUser interface {
 }
 
 type JWTConf struct {
+	Disable    bool          `yaml:"disable"`
 	Algorithm  string        `yaml:"algorithm"`
 	Realm      string        `yaml:"realm"`
 	Timeout    time.Duration `yaml:"timeout"`
@@ -278,6 +279,11 @@ func (j *JWTConf) CheckIfTokenExpireByTokenString(tokenStr string) (rawjwt.MapCl
 }
 
 func (j *JWTConf) MiddlewareFunc() app.HandlerFunc {
+	if j.Disable {
+		return func(ctx context.Context, c *app.RequestContext) {
+			c.Next(ctx)
+		}
+	}
 	return j.hertzJWT.MiddlewareFunc()
 }
 
