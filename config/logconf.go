@@ -12,8 +12,9 @@ import (
 
 type LogConf struct {
 	lumberjack.Logger
-	LogDir string `yaml:"log_dir"`
-	Ctx    any
+	LogName string `yaml:"log_name"`
+	LogDir  string `yaml:"log_dir"`
+	Ctx     any
 }
 
 // LoggerInit 日志初始化
@@ -21,6 +22,9 @@ func (l *LogConf) LoggerInit(isDev bool) (error, func()) {
 	cleanup := func() {}
 	if isDev || l.LogDir == "" {
 		return nil, cleanup
+	}
+	if l.LogName == "" {
+		l.LogName = "app"
 	}
 
 	if err := l.initLogFile(); err != nil {
@@ -79,7 +83,7 @@ func (l *LogConf) initLogFile() error {
 		return err
 	}
 
-	l.Filename = fmt.Sprintf("%sapp-%s.log", l.LogDir, time.Now().Format("2006-01-02"))
+	l.Filename = fmt.Sprintf("%s%s-%s.log", l.LogDir, l.LogName, time.Now().Format("2006-01-02"))
 
 	//if _, err := os.Stat(l.Filename); err != nil {
 	//	if _, err = os.Create(l.Filename); err != nil {
