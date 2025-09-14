@@ -70,7 +70,7 @@ func (r *response) failure(code ErrorCode, msg string) {
 	}
 	r.ctx.JSON(err.HttpCode(), utils.H{
 		"code": int(err.Code()),
-		"data": make([]int, 0),
+		"data": make(map[string]interface{}),
 		"msg":  err.Msg(),
 	})
 }
