@@ -32,7 +32,7 @@ func NewResponse(ctx *app.RequestContext) Response {
 // Success 成功响应
 func (r *response) Success(data interface{}) {
 	if data == nil {
-		data = make([]int, 0)
+		data = make(map[string]interface{})
 	}
 	r.ctx.JSON(consts.StatusOK, utils.H{
 		"code": ErrNone,
