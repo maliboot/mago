@@ -2,23 +2,22 @@ package config
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"os"
 	"path/filepath"
-	"sync"
 
 	"github.com/cloudwego/hertz/pkg/common/hlog"
-	"github.com/maliboot/mago/helper"
 	_ "go.beyondstorage.io/services/cos/v3"
+	_ "go.beyondstorage.io/services/fs/v4"
 	_ "go.beyondstorage.io/services/oss/v3"
 	"go.beyondstorage.io/v5/pairs"
 	"go.beyondstorage.io/v5/services"
 	"go.beyondstorage.io/v5/types"
-	"golang.org/x/sync/errgroup"
+
+	"github.com/maliboot/mago/helper"
 )
 
 type File struct {
@@ -46,6 +45,7 @@ type FileStorage struct {
 	name            string
 	ins             types.Storager
 	uploadChunkSize int64
+	bufPool         *helper.SyncBuf
 }
 
 func (f *File) GetStorage(workDir string) (*FileStorage, error) {
@@ -57,6 +57,19 @@ func (f *File) GetStorage(workDir string) (*FileStorage, error) {
 	}
 	var connStr string
 	switch f.Default {
+	case "local":
+		localAbs, err := filepath.Abs(f.Local.RootDir)
+		if err != nil {
+			return nil, fmt.Errorf("config:file配置的local异常:%v", err)
+		}
+		localAbs = filepath.Clean(localAbs)
+		if err = os.MkdirAll(localAbs, 0755); err != nil {
+			return nil, fmt.Errorf("config:file异常, 无法创建目录 %s: %w", localAbs, err)
+		}
+		if localAbs != "" && localAbs[len(localAbs)-1] != '/' {
+			localAbs += "/"
+		}
+		connStr = fmt.Sprintf("fs://%s%s", localAbs, workDir)
 	case "oss":
 		connStr = fmt.Sprintf(
 			"oss://%s%s?credential=hmac:%s:%s&endpoint=https:%s",
@@ -74,8 +87,26 @@ func (f *File) GetStorage(workDir string) (*FileStorage, error) {
 	var err error
 	fs.name = f.Default
 	fs.ins, err = services.NewStoragerFromString(connStr)
-	fs.uploadChunkSize = 1024 * 1024 * 5
+	fs.uploadChunkSize = 1024 * 1024 * 2
+	fs.bufPool = helper.NewSyncBuf()
 	return &fs, err
+}
+
+func (f *File) IsFS() bool {
+	return f.Default == "local"
+}
+
+func (f *File) GetFSAbsDir() (string, error) {
+	localAbs, err := filepath.Abs(f.Local.RootDir)
+	if err != nil {
+		return "", fmt.Errorf("获取绝对路径失败: %v", err)
+	}
+	localAbs = filepath.Clean(localAbs)
+	if err = os.MkdirAll(localAbs, 0755); err != nil {
+		return "", fmt.Errorf("无法创建目录 %s: %w", localAbs, err)
+	}
+
+	return localAbs, nil
 }
 
 func (f *File) GetBaseUrl(path string) string {
@@ -86,6 +117,8 @@ func (f *File) GetBaseUrl(path string) string {
 		path = "/" + path
 	}
 	switch f.Default {
+	case "local":
+		return fmt.Sprintf("fs://%s", path)
 	case "oss":
 		return fmt.Sprintf("https://%s.%s%s", f.OSS.Bucket, f.OSS.Endpoint, path)
 	}
@@ -99,6 +132,10 @@ func (s *FileStorage) Stat(path string) (*types.Object, error) {
 
 func (s *FileStorage) SetUploadChunkSize(chunkSize int64) {
 	s.uploadChunkSize = chunkSize
+}
+
+func (s *FileStorage) isFS() bool {
+	return s.name == "local"
 }
 
 func (s *FileStorage) upload(data interface{}, processFunc func(bs []byte), auto bool) error {
@@ -147,7 +184,7 @@ func (s *FileStorage) upload(data interface{}, processFunc func(bs []byte), auto
 		return errors.New("错误的data参数")
 	}
 
-	if auto && fileSize > 10*1024*1024 {
+	if auto && fileSize > 10*1024*1024 && !s.isFS() {
 		var fn func(part types.Part) = nil
 		if processFunc != nil {
 			fn = func(part types.Part) {
@@ -206,80 +243,51 @@ func (s *FileStorage) MultipartUploadByPath(path string, processFunc func(part t
 		return err
 	}
 
-	return s.multipartUpload(path, fileInfo.Size(), file, processFunc)
+	return s.multipartUpload(fileInfo.Name(), fileInfo.Size(), file, processFunc)
 }
 
-func (s *FileStorage) multipartUpload(filePath string, fileSize int64, readerAt io.ReaderAt, processFunc func(part types.Part)) error {
+func (s *FileStorage) multipartUpload(dstPath string, fileSize int64, srcReader io.Reader, processFunc func(part types.Part)) error {
 
 	multipartStorage, ok := s.ins.(types.Multiparter)
 	if !ok {
 		return fmt.Errorf("multiparter unimplemented for %s", s.name)
 	}
-	multipartIns, err := multipartStorage.CreateMultipart(filePath)
+	multipartIns, err := multipartStorage.CreateMultipart(dstPath)
 	if err != nil {
-		return fmt.Errorf("CreateMultipart %v: %v", filePath, err)
+		return fmt.Errorf("CreateMultipart %v: %v", dstPath, err)
 	}
 
 	// 设置每个分片的大小,2MB
 	partSize := s.uploadChunkSize
-	// 计算分片数量
-	partNumber := int(fileSize/partSize) + 1
+	offset := int64(0)
+	index := 1
+	var uploadParts []*types.Part
+	for offset < fileSize {
+		// 计算当前分片大小
+		remaining := fileSize - offset
+		currentPartSize := partSize
+		if remaining < partSize {
+			currentPartSize = remaining
+		}
 
-	// 逐个上传分片
-	taskResult := make(chan *types.Part, 1)
-	eg, egCtx := errgroup.WithContext(context.Background())
-	var wg sync.WaitGroup
-	for i := 0; i < partNumber; i++ {
-		wg.Add(1)
-		index := i
-		eg.Go(func() error {
-			defer wg.Done()
-			// 读取分片数据
-			partData := make([]byte, partSize)
-			bytesRead, err := readerAt.ReadAt(partData, partSize*int64(index))
-			if err != nil && !errors.Is(err, io.EOF) {
-				return fmt.Errorf("WriteMultipart.Read %v: %v", filePath, err)
-			}
-			n, part, err := multipartStorage.WriteMultipart(multipartIns, bytes.NewReader(partData[:bytesRead]), int64(bytesRead), index)
-			if err != nil {
-				return fmt.Errorf("WriteMultipart %v: %v, len:%d", filePath, err, n)
-			}
-			taskResult <- part
-			return nil
-		})
-	}
-	go func() {
-		// 等待上下文被取消
-		<-egCtx.Done()
-		// 取消所有协程的执行
-		eg.Go(func() error {
-			return egCtx.Err()
-		})
-	}()
-	go func() {
-		wg.Wait()
-		close(taskResult) // 关闭结果通道
-	}()
-
-	var parts = make([]*types.Part, partNumber)
-	for part := range taskResult {
+		n, part, err := multipartStorage.WriteMultipart(multipartIns, srcReader, currentPartSize, index)
+		if err != nil {
+			return fmt.Errorf("WriteMultipart %v: %v, len:%d", dstPath, err, n)
+		}
 		if processFunc != nil && part != nil {
 			go processFunc(*part)
 		}
-		parts[part.Index] = part
+		uploadParts = append(uploadParts, part)
+		offset += currentPartSize
+		index++
 	}
 
-	// 等待所有任务的结束，并返回第一个发生的错误
-	if err = eg.Wait(); err != nil {
-		return err
-	}
-
-	err = multipartStorage.CompleteMultipart(multipartIns, parts)
+	err = multipartStorage.CompleteMultipart(multipartIns, uploadParts)
 	if err != nil {
-		return fmt.Errorf("CompleteMultipart %v: %v", filePath, err)
+		return fmt.Errorf("CompleteMultipart %v: %v", dstPath, err)
 	}
 
-	hlog.Debugf("path[%s] multipart upload size: %dMB", filePath, fileSize/1024/1024)
+	hlog.Debugf("path[%s] multipart upload size: %dMB", dstPath, fileSize/1024/1024)
 	return nil
 }
 

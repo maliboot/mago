@@ -1,8 +1,0 @@
-package {{ .TplArgs.LowerTableName }}
-
-import "github.com/maliboot/mago"
-
-type {{ .TplArgs.UpperCamelTableName }} struct {
-	{{- range .TplArgs.TableFields }}
-    {{ .UpperCamelName }} {{ .Type }}{{ end }}
-}

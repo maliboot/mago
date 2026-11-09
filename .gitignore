@@ -40,3 +40,4 @@ build/
 .idea/
 *.swp
 /config/conf.json
+conf.yml

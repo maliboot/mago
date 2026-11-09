@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"github.com/maliboot/mago/logx"
 	"io"
 	"os"
+	"path"
 
 	"gopkg.in/yaml.v3"
 )
@@ -14,10 +16,13 @@ type Conf struct {
 	filePath  string
 	Workspace string                   `yaml:"workspace"`
 	Server    *ServerConf              `yaml:"server"`
-	Log       *LogConf                 `yaml:"logger"`
+	Log       *LogRusConf              `yaml:"logger"`
 	Databases map[string]*DataBaseConf `yaml:"databases"`
 	File      *File                    `yaml:"file"`
 	Redis     *Redis                   `yaml:"redis"`
+	MQTT      *MQTT                    `yaml:"mqtt"`
+	Queue     *QueueConf               `yaml:"queue"`
+	Scheduler *Scheduler               `yaml:"scheduler"`
 	Ctx       any
 }
 
@@ -35,7 +40,7 @@ func NewConf(opts ...ConfOption) *Conf {
 		c.Server = &ServerConf{
 			Http: HttpConf{Port: 9501},
 		}
-		c.Log = &LogConf{}
+		c.Log = &LogRusConf{}
 	}
 
 	return &c
@@ -73,7 +78,7 @@ func (c *Conf) fileRead(out interface{}) error {
 	return nil
 }
 
-func (c *Conf) Bootstrap() error {
+func (c *Conf) Bootstrap(fixedProduction bool) error {
 	// 配置解析
 	if c.filePath != "" {
 		err := c.fileRead(c)
@@ -81,11 +86,29 @@ func (c *Conf) Bootstrap() error {
 			return err
 		}
 	}
+	if fixedProduction {
+		c.AppEnv = Production
+	}
 
 	// 日志
-	err, _ := c.Log.LoggerInit(c.AppEnv == Dev)
-	if err != nil {
-		return err
+	logx.NewLogRus(c.AppEnv.String(), c.Log.LogDir)
+
+	// 队列
+	if c.Queue == nil {
+		c.Queue = &QueueConf{}
+	}
+	if c.Queue.CacheDir == "" {
+		c.Queue.CacheDir = path.Join(c.Log.LogDir, "queue")
+	}
+
+	// 计划任务
+	if c.Scheduler == nil {
+		c.Scheduler = &Scheduler{}
+		cron, err := c.Scheduler.Cron()
+		if err != nil {
+			return err
+		}
+		cron.Start()
 	}
 
 	return nil

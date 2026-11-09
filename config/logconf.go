@@ -18,9 +18,9 @@ type LogConf struct {
 }
 
 // LoggerInit 日志初始化
-func (l *LogConf) LoggerInit(isDev bool) (error, func()) {
+func (l *LogConf) LoggerInit(appEnv AppEnv) (error, func()) {
 	cleanup := func() {}
-	if isDev || l.LogDir == "" {
+	if appEnv == Dev || l.LogDir == "" {
 		return nil, cleanup
 	}
 	if l.LogName == "" {
@@ -44,7 +44,11 @@ func (l *LogConf) LoggerInit(isDev bool) (error, func()) {
 	l.Compress = true
 
 	logger.SetOutput(l)
-	logger.SetLevel(hlog.LevelDebug)
+	if appEnv != Production {
+		logger.SetLevel(hlog.LevelTrace)
+	} else {
+		logger.SetLevel(hlog.LevelInfo)
+	}
 	hlog.SetLogger(logger)
 
 	go func() {

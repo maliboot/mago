@@ -1,6 +1,9 @@
 package mago
 
-import "strings"
+import (
+	"strings"
+	"sync"
+)
 
 // Error 普通错误
 type Error interface {
@@ -16,7 +19,7 @@ type errorContext struct {
 	code     ErrorCode
 	httpCode int
 	msg      string
-	template map[string]string
+	template sync.Map
 }
 
 func NewError(code ErrorCode) Error {
@@ -24,7 +27,6 @@ func NewError(code ErrorCode) Error {
 	ins.code = code
 	ins.httpCode = code.HttpCode()
 	ins.msg = code.String()
-	ins.template = make(map[string]string)
 	return ins
 }
 
@@ -42,19 +44,17 @@ func (e *errorContext) WithMsg(msg string) Error {
 }
 
 func (e *errorContext) SetTemplate(name string, value string) Error {
-	e.template[name] = value
+	e.template.Store(name, value)
 	return e
 }
 
 func (e *errorContext) Msg() string {
-	if len(e.template) > 0 {
-		newMsg := ""
-		for k, v := range e.template {
-			newMsg = strings.ReplaceAll(e.msg, k, v)
-		}
-		return newMsg
-	}
-	return e.msg
+	retMsg := e.msg
+	e.template.Range(func(k, v any) bool {
+		retMsg = strings.ReplaceAll(retMsg, k.(string), v.(string))
+		return true
+	})
+	return retMsg
 }
 
 func (e *errorContext) Error() string {

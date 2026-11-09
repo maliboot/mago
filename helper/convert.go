@@ -17,19 +17,19 @@ func Marshal(object interface{}) ([]byte, error) {
 }
 
 func Unmarshal[S any](jsonData []byte) (*S, error) {
-	var s = new(S)
-	err := json.Unmarshal(jsonData, s)
-	return s, err
+	var s S
+	err := json.Unmarshal(jsonData, &s)
+	return &s, err
 }
 
 func UnmarshalUseNumber[S any](jsonData []byte) (*S, error) {
-	var s = new(S)
+	var s S
 
 	d := json.NewDecoder(bytes.NewReader(jsonData))
 	d.UseNumber()
-	err := d.Decode(s)
+	err := d.Decode(&s)
 
-	return s, err
+	return &s, err
 }
 
 func ToLowerCamelJson(snakeJson []byte) ([]byte, error) {

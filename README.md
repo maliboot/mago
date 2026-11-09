@@ -1,20 +1,21 @@
-# Mago
+# mago
 
 #### 简介
 
-* 这是一个`maliboot`框架的golang版本。
-* 为了满足`phper`的使用习惯，组件设计、注解(基于google/wire)尽可能的使用了`hyperf`的许多规范。
+* 这是一个`Alibaba/COLA`(`4.0.0版本`)架构的golang版本框架。
+* 为了满足`java`开发者的使用习惯和接入，架构的设计是`golang`反范式的，一切开发规范以`JAVA`社区规范为主
+* 为了满足`phper`的使用习惯和接入，组件设计、注解(基于google/wire)尽可能的使用了`hyperf`的许多规范。
 * 路由组件使用的是`hertz`，数据库组件使用了`gorm`
 
 #### 准备
 
-* golang >= 1.24
+* golang >= 1.26.4
 * make
 
 #### 安装
 
 ```shell
-go install github.com/maliboot/mago/mali@latest
+go install ./mago/cli
 ```
 
 #### 创建新项目(模块)
@@ -27,11 +28,11 @@ cd mago-skeleton
 go mod init
 ```
 
-* 初始化`maliboot`骨架
+* 初始化`mago`骨架
 
 ```shell
 cd mago-skeleton
-mali init
+easycli init
 ```
 
 * 生成文件如下
@@ -85,17 +86,17 @@ redis:
 ```shell
 cd mago-skeleton
 ## example为数据库名称，uss_message_tpl_var为表名。当无数据库名称时，会默认取`mago-skeleton/conf.yml`里第一个数据库
-mali curd -t=example.uss_message_tpl_var
+easycli curd -t=example.uss_message_tpl_var
 ```
 
-> 注意：当使用了注解路由时，需要在`mago-skeleton/main.go`中解开`*Container`注释。另外，`mali curd`默认生成的是注解路由
+> 注意：当使用了注解路由时，需要在`mago-skeleton/main.go`中解开`*Container`注释。另外，`easycli curd`默认生成的是注解路由
 
 ``` go
 package main
 
 import (
     "flag"
-    
+
     "github.com/maliboot/mago"
     "github.com/maliboot/mago/config"
 )
@@ -128,7 +129,7 @@ func main() {
 
 	// 配置
 	c := config.NewConf(config.WithConfFile(flagConf))
-	if err := c.Bootstrap(); err != nil {
+	if err := c.Bootstrap(false); err != nil {
 		panic(err)
 	}
 
@@ -148,7 +149,9 @@ func main() {
 
 ```shell
 cd mago-skeleton
-make wire
+## 收集自定义注解
+easycli inject
+## 生成依赖注入代码
 ```
 
 #### 使用

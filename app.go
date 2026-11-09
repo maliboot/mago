@@ -3,6 +3,7 @@ package mago
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/signal"
 	"sync"
@@ -38,34 +39,57 @@ func New(name string, servers []Server) *App {
 
 func (a *App) Run() error {
 	eg, ctx := errgroup.WithContext(a.ctx)
-	wg := sync.WaitGroup{}
 
+	var startErrMu sync.Mutex
+	var firstStartErr error
 	for _, srv := range a.Servers {
 		if srv == nil {
 			continue
 		}
 		srv := srv
 		eg.Go(func() error {
-			<-ctx.Done() // wait for stop signal
+			startDone := make(chan error, 1)
+			go func() {
+				err := srv.Start(a.ctx)
+				startDone <- err
+			}()
+
+			select {
+			case err := <-startDone:
+				if err != nil {
+					hlog.Errorf("%s server [%T] start error: %v", a.Name, srv, err)
+					startErrMu.Lock()
+					if firstStartErr == nil {
+						firstStartErr = err
+					}
+					startErrMu.Unlock()
+					return err
+				}
+				<-ctx.Done()
+			case <-ctx.Done():
+				// 在 Start 还没完成时就收到停止信号（极少发生，但要处理）
+				return nil
+			}
+
 			stopCtx, cancel := context.WithTimeout(context.WithValue(a.ctx, StopError{}, a.stopErr), a.stopTimeout)
 			defer cancel()
-			return srv.Stop(stopCtx)
-		})
-		wg.Add(1)
-		eg.Go(func() error {
-			wg.Done() // here is to ensure server start has begun running before register, so defer is not needed
-			return srv.Start(a.ctx)
-		})
-	}
-	wg.Wait()
 
-	signalToNotify := []os.Signal{syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM}
-	if signal.Ignored(syscall.SIGHUP) {
-		signalToNotify = []os.Signal{syscall.SIGINT, syscall.SIGTERM}
+			if err := srv.Stop(stopCtx); err != nil {
+				hlog.Errorf("%s server stop error: %v", a.Name, err)
+				return err
+			}
+			return nil
+		})
 	}
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, signalToNotify...)
+
 	eg.Go(func() error {
+		signalToNotify := []os.Signal{syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM}
+		if signal.Ignored(syscall.SIGHUP) {
+			signalToNotify = []os.Signal{syscall.SIGINT, syscall.SIGTERM}
+		}
+		signals := make(chan os.Signal, 1)
+		signal.Notify(signals, signalToNotify...)
+
 		select {
 		case <-ctx.Done():
 			return nil
@@ -74,12 +98,19 @@ func (a *App) Run() error {
 		}
 	})
 	if err := eg.Wait(); err != nil && !errors.Is(err, context.Canceled) {
+		if firstStartErr != nil {
+			return firstStartErr
+		}
 		return err
 	}
 	return nil
 }
 
 func (a *App) Stop(sig os.Signal) error {
+	if a.stopErr == nil {
+		a.stopErr = fmt.Errorf("received signal: %v", sig)
+	}
+
 	if a.cancel != nil {
 		defer a.cancel()
 	}

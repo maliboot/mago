@@ -7,13 +7,17 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/maliboot/mago/config"
+	"github.com/cloudwego/hertz/pkg/common/hlog"
 	"gorm.io/gorm"
+
+	"github.com/maliboot/mago/config"
 )
 
 type Repository[D DataObject] interface {
 	Error() error
 	DB(do D) *gorm.DB
+	DefaultDB() *gorm.DB
+	DefaultDO() D
 	Find(id int) *D
 	First(where [][]string, columns []string) *D
 	Last(where [][]string, columns []string) *D
@@ -45,8 +49,30 @@ func (d *AbstractRepository[D]) resetErr(err error) {
 
 func (d *AbstractRepository[D]) DB(do D) *gorm.DB {
 	var db *gorm.DB
-	db, d.Err = d.Conf.Databases[do.DatabaseName()].GetDB()
+	dbConf, ok := d.Conf.Databases[do.DatabaseName()]
+	if !ok {
+		d.Err = errors.New("database conf not found")
+		hlog.Fatalf("数据库配置异常")
+	}
+	db, d.Err = dbConf.GetDB()
 	return db
+}
+
+func (d *AbstractRepository[D]) DefaultDB() *gorm.DB {
+	var db *gorm.DB
+	var do D
+	dbConf, ok := d.Conf.Databases[do.DatabaseName()]
+	if !ok {
+		d.Err = errors.New("database conf not found")
+		hlog.Fatalf("数据库配置异常")
+	}
+	db, d.Err = dbConf.GetDB()
+	return db
+}
+
+func (d *AbstractRepository[D]) DefaultDO() D {
+	var do D
+	return do
 }
 
 func (d *AbstractRepository[D]) Find(id int) *D {
@@ -54,13 +80,13 @@ func (d *AbstractRepository[D]) Find(id int) *D {
 		d.resetErr(gorm.ErrRecordNotFound)
 		return nil
 	}
-	var do = new(D)
-	tx := d.DB(*do).Where("id=?", id).First(do)
+	var do D
+	tx := d.DB(do).Where("id=?", id).First(&do)
 	d.resetErr(tx.Error)
 	if tx.RowsAffected == 0 {
 		return nil
 	}
-	return do
+	return &do
 }
 
 func (d *AbstractRepository[D]) Create(do *D) int64 {
@@ -73,7 +99,8 @@ func (d *AbstractRepository[D]) Update(id int, do *D) int64 {
 	if id == 0 {
 		return 0
 	}
-	tx := d.DB(*do).Model(new(D)).Where((*do).PrimaryKey()+" = ?", id).Updates(do)
+	var ds D
+	tx := d.DB(*do).Model(&ds).Where((*do).PrimaryKey()+" = ?", id).Updates(do)
 	d.resetErr(tx.Error)
 	return tx.RowsAffected
 }
@@ -86,43 +113,52 @@ func (d *AbstractRepository[D]) Delete(ids []int) int64 {
 	if len(ids) == 0 {
 		return 0
 	}
-	var do = new(D)
-	tx := d.DB(*do).Delete(do, ids)
+	var do D
+	tx := d.DB(do).Delete(&do, ids)
 	d.resetErr(tx.Error)
 	return tx.RowsAffected
 }
 
 func (d *AbstractRepository[D]) First(where [][]string, columns []string) *D {
-	var do = new(D)
-	tx := d.where(d.DB(*do).Select(columns), where).First(do)
+	var do D
+	tx := d.where(d.DB(do).Select(columns), where).First(&do)
 	d.resetErr(tx.Error)
 	if tx.RowsAffected == 0 {
 		return nil
 	}
-	return do
+	return &do
 }
 
 func (d *AbstractRepository[D]) Last(where [][]string, columns []string) *D {
-	var do = new(D)
-	tx := d.where(d.DB(*do).Select(columns), where).Last(do)
+	var do D
+	tx := d.where(d.DB(do).Select(columns), where).Last(&do)
 	d.resetErr(tx.Error)
 	if tx.RowsAffected == 0 {
 		return nil
 	}
-	return do
+	return &do
 }
 
 func (d *AbstractRepository[D]) Get(where [][]string, columns []string, limit int) *[]D {
 	var result = make([]D, 0)
-	tx := d.where(d.DB(*(new(D))).Select(columns), where).Limit(limit).Find(&result)
+	var ds D
+	tx := d.where(d.DB(ds).Select(columns), where).Limit(limit).Find(&result)
+	d.resetErr(tx.Error)
+	return &result
+}
+
+func (d *AbstractRepository[D]) GetByOrder(where [][]string, columns []string, limit int, order string) *[]D {
+	var result = make([]D, 0)
+	var ds D
+	tx := d.where(d.DB(ds).Select(columns), where).Order(order).Limit(limit).Find(&result)
 	d.resetErr(tx.Error)
 	return &result
 }
 
 // Paginate 分页
 func (d *AbstractRepository[D]) Paginate(pageQry *AbstractPageQuery) *PageVO[D] {
-	var do = new(D)
-	dbIns := d.DB(*do).Model(do)
+	var do D
+	dbIns := d.DB(do).Model(&do)
 	if pageQry.PageSize == 0 {
 		pageQry.PageSize = 10
 	}
@@ -130,7 +166,7 @@ func (d *AbstractRepository[D]) Paginate(pageQry *AbstractPageQuery) *PageVO[D] 
 		pageQry.PageIndex = 1
 	}
 	if pageQry.OrderByRaw == "" {
-		pageQry.OrderByRaw = (*do).PrimaryKey() + " desc"
+		pageQry.OrderByRaw = do.PrimaryKey() + " desc"
 	}
 
 	if pageQry.Columns != nil && len(pageQry.Columns) != 0 {
@@ -164,6 +200,10 @@ func (d *AbstractRepository[D]) Paginate(pageQry *AbstractPageQuery) *PageVO[D] 
 		TotalPage:  int(math.Ceil(float64(rowCount) / float64(pageQry.PageSize))),
 		Items:      &rows,
 	}
+}
+
+func (d *AbstractRepository[D]) Where(tx *gorm.DB, where [][]string) *gorm.DB {
+	return d.where(tx, where)
 }
 
 // 组合条件

@@ -1,0 +1,61 @@
+## production
+## 将此文件复制到程序目录下，并重命名为 conf.yml
+app_name: mali
+app_env: production
+server:
+  http:
+    port: 8898
+    jwt:
+      frontend:
+        secret: "#4root123.2334"
+  tcp:
+    port: 8899
+  ## 内存限制MB，为0时默认取系统可用内存
+#  memory_limit: 1024
+logger:
+  log_dir: ./runtime
+databases:
+#  mali:
+#    type: mysql
+#    dsn: root:root@tcp(127.0.0.1:33060)/mali?&parseTime=true&loc=Local
+#    username: user:group:other
+#    password: ld#@:D7hdfawm2vb2!
+#    host: 127.0.0.1
+#    port: 3306
+#    net: tcp
+#    db: mali
+#    singular_table: true
+  mali:
+    type: sqlite
+    dsn: ./runtime/mali.db #默认 file::memory:?cache=shared
+    singular_table: true
+## 文件存储
+file:
+  default: oss
+  ## 本地存储时，注意定期手动管理空间，避免磁盘爆炸
+  local:
+    root: ./runtime/fs
+    ## 可以使用如nginx搭建静态资源服务，需要确保该路径可以访问，
+    base_url: http://127.0.0.1:3000
+  oss:
+    access_id: foo
+    access_secret: foo
+    bucket: foo
+    endpoint: oss-cn-chongqing.aliyuncs.com
+queue:
+  ## 默认sqlite
+  default: sqlite
+  concurrency: 4
+  ## redis version >= 4.0
+  redis:
+    # redis://[:password@]host[:port][/dbnumber]
+    dsn: redis://user:password@foo.com:6379/10
+  ## 队列聚合 max_size为聚合最大等待任务量, max_delay为聚合最大等待时间(ms)。两者有一个为0则默认不聚合
+  aggregator_max_size: 10
+  aggregator_max_delay: 5000
+mqtt:
+  enable: false
+  ip: 127.0.0.1
+  port: 1883
+  username: stone
+  password: stone
