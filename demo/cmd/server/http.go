@@ -5,16 +5,21 @@ import (
 	"fmt"
 	"strings"
 
+	userhttp "tests/internal/user/adapter/http"
+	usermcp "tests/internal/user/adapter/mcp"
+	"tests/internal/user/application"
+	"tests/internal/user/infrastructure/repository"
+	"tests/internal/user/infrastructure/util"
+
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/middlewares/server/recovery"
 	"github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/cloudwego/hertz/pkg/common/adaptor"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
 	"github.com/maliboot/mago"
 	"github.com/maliboot/mago/autoloadx"
 	"github.com/maliboot/mago/config"
 	eghelper "github.com/maliboot/mago/helper"
-
-	"tests/internal/user"
 )
 
 func NewHttpServer(c *config.Conf) *mago.Http {
@@ -62,5 +67,13 @@ func NewHttpServer(c *config.Conf) *mago.Http {
 func Register(h *mago.Http, conf *config.Conf) {
 	v1 := h.Group("/v1")
 	authed := v1.Group("", conf.Server.Http.JWT["frontend"].MiddlewareFunc())
-	user.NewController(conf).Router(v1, authed)
+
+	// 组合根：infrastructure → application → adapter 逐层装配
+	// 一个 DO 只有一个 repository：读写方法都在同一个实例上
+	users := repository.NewUser(conf)
+	userSvc := application.NewUserService(users, users, util.NewPassword(), util.NewToken(conf))
+	userhttp.NewUserController(userSvc).Router(v1, authed)
+
+	// MCP 入口：官方 go-sdk 的 Streamable HTTP 处理器，经 hertz 官方 adaptor 挂载
+	h.Any("/v1/mcp", adaptor.HertzHandler(usermcp.NewUserMcp(userSvc).Handler()))
 }

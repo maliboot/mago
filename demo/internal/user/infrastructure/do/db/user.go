@@ -1,4 +1,4 @@
-package user
+package db
 
 import (
 	"time"
@@ -6,7 +6,8 @@ import (
 	"github.com/maliboot/mago"
 )
 
-type Model struct {
+// User 是用户表的持久化 DO，只描述存储结构与列约束，不承载业务行为。
+type User struct {
 	mago.AbstractDataObject
 
 	Email             string     `gorm:"column:email;not null;uniqueIndex:uk_email"`    // 邮箱
@@ -24,8 +25,8 @@ type Model struct {
 }
 
 // TableName 表名单数纪律。
-func (Model) TableName() string { return "user" }
+func (User) TableName() string { return "user" }
 
-func (Model) DatabaseName() string {
+func (User) DatabaseName() string {
 	return "mali"
 }

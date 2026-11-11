@@ -1,0 +1,106 @@
+# mago demo 后端架构速查（AI 专用）
+
+> 本文件是 `README.md` 的精简索引：先在这里拿到「改代码前必须知道的约束」，再按链接跳到 `README.md` 对应章节。
+> `README.md` 是唯一规范来源；两者冲突时以 `README.md` 为准，并把差异反馈给维护者。
+
+## 1. 项目画像
+
+- 语言/版本：Go 1.26，模块名 `tests`（示例工程，勿改 module 名，勿引入新第三方框架）
+- 架构：COLA 5.0 四层单 Module —— `adapter` / `application` / `domain` / `infrastructure`
+- 组织：一个 Bounded Context 一个 `internal/<ctx>/`，当前示例 `internal/user`（§2.2）
+- 技术栈：hertz（HTTP）、gorm（MySQL）、官方 `modelcontextprotocol/go-sdk`（MCP，Streamable HTTP）、mago（本项目框架：错误码、VO、AbstractRepository、配置）
+- 依赖方向：`adapter → application → domain ← infrastructure`；`cmd/server` 是唯一组合根
+
+## 2. 目录速查（internal/user）
+
+| 路径 | 放什么 |
+| --- | --- |
+| `adapter/http/user.go` | HTTP 入口 `UserController`：绑定、校验、回写；路由 `POST /v1/auth/login`、`POST /v1/users` |
+| `adapter/mcp/user.go` | MCP 入口 `UserMcp`：工具 `user_login`、`user_register`、`user_me`，复用同一 dto/vo/service |
+| `application/user.go` | `UserService`（Login/Register/Me）、读端口 `UserQuery`、实现 `userService`、装配入口 `NewUserService` |
+| `application/port.go` | 技术能力端口：`PasswordHasher`、`TokenIssuer`（消费方定义） |
+| `application/impl_test.go` | 全项目唯一的接口断言（`api.UserService`） |
+| `client/api/user.go` | 跨上下文调用契约 |
+| `client/dto/user.go` | 入参 `UserAuthRequest`（HTTP 与 MCP 共用一套） |
+| `client/vo/user.go` | 出参 `UserTokenVO`、`UserVO`，含 `NewXxxVO` 构造与 DO/Entity → VO 转换 |
+| `client/enum/user.go` | 对外枚举 `UserStatus`（string 字面量 `active`/`disabled`） |
+| `client/error.go` | 上下文错误码扩展（`ErrUserDisabled=401501`、`ErrEmailTaken=422101`） |
+| `domain/user.go` | 聚合 `User`：导出字段 + `NewUser`/`RestoreUser`/`NormalizeEmail`/`CanLogin`/`MarkLoggedIn` |
+| `domain/gateway.go` | 聚合持久化端口 `UserGateway`（GetByEmail/Create/Update） |
+| `infrastructure/repository/user.go` | 该 DO **唯一** repository：写实现 `UserGateway`，读实现 `UserQuery.ByID`（直查列 → VO） |
+| `infrastructure/convertor/user.go` | DO ↔ Entity / VO |
+| `infrastructure/do/db/user.go` | 表结构 DO（`TableName() = "user"`） |
+| `infrastructure/util/{bool,password,token}.go` | 类型转换、bcrypt、JWT 签发 |
+| `cmd/server/http.go` | 组合根：唯一同时 import 四层的地方 |
+| `internal/user/arch_test.go` | 分层依赖断言，改错方向会直接失败 |
+
+## 3. 硬约束（违反即返工）
+
+| 约束 | 具体要求 |
+| --- | --- |
+| 依赖方向 | domain 不 import adapter/application/infrastructure；application 不 import adapter/infrastructure；基础设施实现不 import adapter |
+| 一 DO 一 repository | 写方法（Gateway）与读方法（直查列）都挂同一个 repository，禁止两个 repository 指向同一个 DO（§6） |
+| adapter 零业务 | 只做绑定/校验/回写；HTTP 与 MCP 共用 `client/dto`、`client/vo` 与同一个 application Service，禁止自造 in/out 类型 |
+| 轻量 CQRS | 读路径 `adapter → application → repository 读方法 → client/vo`，不加载聚合；仅当 domain Gateway 已有可复用方法时才走 domain（§8） |
+| ctx 风格 | 跨层方法（Service、Gateway、repository、端口实现）首参 `context.Context`，一路透传（gorm 用 `WithContext`）；禁止业务代码 `context.Background()`（§16.1） |
+| 错误 | 只用 mago 全局错误码，domain 不自定义 `ErrXxx`；基础设施错误不得伪装成业务错误（§13） |
+| 模型边界 | DO 不出 infrastructure，Entity 不出 domain/application，对外只给 `client/vo`（§9） |
+| 端口归属 | 聚合 Gateway 放 domain；散列、令牌等技术能力端口放 application（消费方定义）（§6.3） |
+| 接口断言 | 有调用方的接口靠装配处编译期校验，不写 `var _ X = (*T)(nil)`；无调用方的契约断言放 `_test.go`（§16.3） |
+| 依赖选型 | 协议/功能/开放平台接入按优先级取第一个可用方案：标准库 → mago 仓库组件 → 社区官方库 → 高热度且仍在维护的库 → 自己实现；跳级要写理由（§16.6） |
+| 目录禁区 | 不建 `docs/`、`migrations/`、`pkg/`、全局 `utils/`；迁移与修数脚本放 `internal/<ctx>/adapter/script/`（§2.3） |
+
+## 4. 常见任务落点
+
+| 要做的事 | 改哪里 |
+| --- | --- |
+| 加一个用例 | `application/<ctx>.go` 加方法 → `client/dto`、`client/vo` → `adapter/http` 与 `adapter/mcp` 各加入口 |
+| 加一个字段 | `infrastructure/do/db` → `infrastructure/convertor` → `domain` → `client/vo` 或 `client/dto` |
+| 加一个查询 | 同一 repository 加读方法（返回 `client/vo`）→ `application` 的 Query 端口加方法 |
+| 加一个错误码 | `client/error.go` 的 `init()` 中 `mago.InitErrorCodeMsg` 注册 |
+| 换基础设施 | 只改 `infrastructure`（repository 换存储、`util` 换散列/JWT 实现），上层不动 |
+| 新增上下文 | 复制 `internal/user` 四层骨架；跨上下文只 import 对方 `client/api` |
+
+## 5. 校验命令
+
+```bash
+cd demo
+/usr/local/go/bin/gofmt -l .          # 必须无输出
+/usr/local/go/bin/go build ./...
+/usr/local/go/bin/go vet ./...
+/usr/local/go/bin/go test -count=1 ./...
+```
+
+`internal/user/arch_test.go` 断言分层依赖；`adapter/mcp/user_test.go` 用官方 SDK 的内存 transport 跑协议级用例。
+
+## 6. 反模式（出现即回退）
+
+1. adapter 里写 `if` 业务判断、拼展示文案、自造请求/响应结构体。
+2. application import `infrastructure`、`gorm`、`config`（技术细节应走端口）。
+3. domain import `client/vo`、`client/dto`、`client/enum`。
+4. 为查询再建一个 `query` repository，或给同一个 DO 建第二个 repository。
+5. 把 `*db.User` 之类的 DO 直接返回给 adapter。
+6. 业务代码里 `context.Background()`，或在端口方法上省略 ctx。
+7. 给有调用方的接口写 `var _` 断言，或为追求完整引入当前用不到的抽象。
+8. 标准库或官方 SDK 已有能力却自己撸协议（如手写 JSON-RPC / MCP、手写 JWT），或直接引入无维护的野库。
+
+## 7. README 章节索引
+
+- [架构总览与依赖图](README.md#1-架构总览)：四层关系、依赖方向
+- [项目目录结构](README.md#2-项目目录结构)：完整目录树、职责表、目录约束、infrastructure 文件命名
+- [Go Package 设计规范](README.md#3-go-package-设计规范)：拆包时机、不用体系化后缀
+- [Domain 领域层](README.md#4-domain-领域层)：技术无关、实体示例、字段可见性
+- [Application 应用层](README.md#5-application-应用层)：Service 接口与实现
+- [Gateway 与依赖倒置](README.md#6-gateway-与依赖倒置)：domain 定义、infrastructure 实现、端口放置
+- [适配器层](README.md#7-适配器层adapter-与-infrastructure)：HTTP/MCP/script 入口与出口实现
+- [轻量 CQRS](README.md#8-读写分离轻量-cqrs)：写路径、读路径、约束
+- [DTO 与 Model 命名](README.md#9-dto-与-model-命名规范)
+- [跨 Bounded Context 通信](README.md#10-跨-bounded-context-通信)：client/api 契约
+- [启动装配](README.md#11-启动装配与依赖注入)：组合根与 DI 规则
+- [错误处理](README.md#13-错误处理)：13.1 domain / 13.2 application / 13.4 原则
+- [事务管理](README.md#14-事务管理)
+- [测试策略](README.md#15-测试策略)
+- [Go 工程规范](README.md#16-go-工程规范)：16.1 基本规范（ctx 风格）、16.3 接口设计
+- [依赖选型优先级](README.md#166-依赖选型优先级)：标准库 → mago 组件 → 社区官方库 → 高热度维护中 → 自己实现
+- [架构依赖约束](README.md#17-架构依赖约束)：允许/禁止依赖表
+- [AI Agent 开发约束](README.md#18-ai-agent-开发约束)：开发前/中/后清单

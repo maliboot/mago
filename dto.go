@@ -1,8 +1,8 @@
 package mago
 
 type AbstractDTO struct {
-	UserId    uint   `query:"__id__"`
-	RequestId string `json:"requestId" query:"X-Request-ID"`
+	UserId    uint   `json:"userId,omitempty" query:"__id__"`
+	RequestId string `json:"requestId,omitempty" query:"X-Request-ID"`
 }
 
 func (a AbstractDTO) BindErr() interface{} {

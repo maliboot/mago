@@ -1,176 +1,24 @@
 # mago
 
-#### 简介
+Go 后端框架：COLA 5.0 分层架构，路由用 hertz、ORM 用 gorm、模型上下文协议用官方 `modelcontextprotocol/go-sdk`。仓库内附示例工程 `demo/`，可直接当作新项目的骨架。
 
-* 这是一个`Alibaba/COLA`(`4.0.0版本`)架构的golang版本框架。
-* 为了满足`java`开发者的使用习惯和接入，架构的设计是`golang`反范式的，一切开发规范以`JAVA`社区规范为主
-* 为了满足`phper`的使用习惯和接入，组件设计、注解(基于google/wire)尽可能的使用了`hyperf`的许多规范。
-* 路由组件使用的是`hertz`，数据库组件使用了`gorm`
+## 文档入口
 
-#### 准备
+| 想做的事 | 看这里 |
+| --- | --- |
+| 架构规范：目录结构、分层职责、依赖方向、命名、错误处理、CQRS、测试 | [demo/README.md](demo/README.md) |
+| 给 AI 编码助手的速查索引（硬约束 + 任务落点） | [demo/llms.txt](demo/llms.txt) |
 
-* golang >= 1.26.4
-* make
+`demo/README.md` 是架构规范的唯一来源；`demo/llms.txt` 由它派生，只做索引与速查，冲突以 README 为准。
 
-#### 安装
+## 仓库结构
 
-```shell
-go install ./mago/cli
+- `demo/` —— 示例工程。`internal/user` 是一个完整的 Bounded Context：`adapter/http`、`adapter/mcp`、`application`、`domain`、`infrastructure`、`client`。
+- 其余文件 —— 框架本体（HTTP、仓储、错误码、DTO/VO、日志、队列、EMQX 等）。
+
+## 校验
+
+```bash
+cd demo
+go build ./... && go vet ./... && go test -count=1 ./...
 ```
-
-#### 创建新项目(模块)
-
-* 初始化项目
-
-```shell
-mkdir mago-skeleton
-cd mago-skeleton
-go mod init
-```
-
-* 初始化`mago`骨架
-
-```shell
-cd mago-skeleton
-easycli init
-```
-
-* 生成文件如下
-
-```
-.
-├── Makefile
-├── README.md
-├── conf.yml
-├── config
-│   ├── autoload
-│   ├── config.go
-│   └── server.go
-├── go.mod
-├── internal
-│   ├── adapter
-│   ├── app
-│   ├── client
-│   ├── domain
-│   └── infra
-├── main.go
-└── wire.go
-
-```
-
-#### 批量生成`CURD`代码
-
-* 修改数据库配置 `mago-skeleton/conf.yml`
-
-```yaml
-app_name: example
-app_env: dev
-server:
-  http:
-    port: 9501
-logger:
-  log_dir:
-databases:
-  ## example为数据库名称
-  example:
-    dsn: root:root@tcp(127.0.0.1:3306)/example?&parseTime=true&loc=Local
-    singular_table: true
-redis:
-  host: 127.0.0.1
-  port: 6379
-  db: 1
-```
-
-* 使用`cli`工具批量生成`cola`代码
-
-```shell
-cd mago-skeleton
-## example为数据库名称，uss_message_tpl_var为表名。当无数据库名称时，会默认取`mago-skeleton/conf.yml`里第一个数据库
-easycli curd -t=example.uss_message_tpl_var
-```
-
-> 注意：当使用了注解路由时，需要在`mago-skeleton/main.go`中解开`*Container`注释。另外，`easycli curd`默认生成的是注解路由
-
-``` go
-package main
-
-import (
-    "flag"
-
-    "github.com/maliboot/mago"
-    "github.com/maliboot/mago/config"
-)
-
-var (
-	flagConf string
-)
-
-func init() {
-	flag.StringVar(&flagConf, "f", "./conf.yml", "config path, eg: -f conf.yml")
-}
-
-func NewApp(
-	c *config.Conf,
-	hs *mago.Http,
-	// container *Container, // ====================================使用注解路由时需要解开注释，否则编译报错
-) *mago.App {
-	// inject
-	// container.Inject(hs) // =====================================使用注解路由时需要解开注释，否则编译报错
-
-	// app
-	return mago.New(
-		c.AppName,
-		[]mago.Server{hs},
-	)
-}
-
-func main() {
-	flag.Parse()
-
-	// 配置
-	c := config.NewConf(config.WithConfFile(flagConf))
-	if err := c.Bootstrap(false); err != nil {
-		panic(err)
-	}
-
-	// start
-	if err := initApp(c).Run(); err != nil {
-		panic(err)
-	}
-}
-```
-
-#### 依赖注入
-
-* 本框架使用了`google/wire`来进行代码依赖注入
-* 本框架的注解功能依赖于`google/wire`组件
-
-项目运行前，需要在当前项目下运行依赖注入命令
-
-```shell
-cd mago-skeleton
-## 收集自定义注解
-easycli inject
-## 生成依赖注入代码
-```
-
-#### 使用
-
-* 运行服务
-
-```
-cd mago-skeleton
-go run main
-
-....
-17:56:51.060784 engine.go:668: [Debug] HERTZ: Method=GET    absolutePath=/ping                     --> handlerName=agentserver/config.NewHttpServer.func1 (num=2 handlers)
-17:56:51.060973 engine.go:668: [Debug] HERTZ: Method=POST   absolutePath=/ussMessageTplVar/create  --> handlerName=agentserver/internal/adapter/admin.(*UssMessageTplVarController).Create-fm (num=2 handlers)
-17:56:51.060995 engine.go:668: [Debug] HERTZ: Method=DELETE absolutePath=/ussMessageTplVar/delete  --> handlerName=agentserver/internal/adapter/admin.(*UssMessageTplVarController).Delete-fm (num=2 handlers)
-17:56:51.061004 engine.go:668: [Debug] HERTZ: Method=GET    absolutePath=/ussMessageTplVar/getById --> handlerName=agentserver/internal/adapter/admin.(*UssMessageTplVarController).GetById-fm (num=2 handlers)
-17:56:51.061015 engine.go:668: [Debug] HERTZ: Method=GET    absolutePath=/ussMessageTplVar/listByPage --> handlerName=agentserver/internal/adapter/admin.(*UssMessageTplVarController).ListByPage-fm (num=2 handlers)
-17:56:51.061160 engine.go:668: [Debug] HERTZ: Method=PUT    absolutePath=/ussMessageTplVar/update  --> handlerName=agentserver/internal/adapter/admin.(*UssMessageTplVarController).Update-fm (num=2 handlers)
-17:56:51.062232 engine.go:396: [Info] HERTZ: Using network library=netpoll
-17:56:51.062533 transport.go:115: [Info] HERTZ: HTTP server listening on address=[::]:9501
-```
-
-* 浏览器访问 `http://localhost:9501/ping`
