@@ -1,352 +1,120 @@
 package config
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
-	"mime/multipart"
 	"os"
 	"path/filepath"
+	"strings"
 
-	"github.com/cloudwego/hertz/pkg/common/hlog"
-	_ "go.beyondstorage.io/services/cos/v3"
-	_ "go.beyondstorage.io/services/fs/v4"
-	_ "go.beyondstorage.io/services/oss/v3"
-	"go.beyondstorage.io/v5/pairs"
-	"go.beyondstorage.io/v5/services"
-	"go.beyondstorage.io/v5/types"
-
-	"github.com/maliboot/mago/helper"
+	"github.com/maliboot/mago/filex"
 )
 
+// File 是文件存储配置，按 default 选择驱动（local / oss）；
+// 读写能力见 filex.FileStorage。
 type File struct {
 	Default string `yaml:"default"`
 	Local   struct {
 		RootDir string `yaml:"root"`
 	} `yaml:"local"`
 	OSS struct {
-		AccessId     string `yaml:"access_id"`
+		Region       string `yaml:"region"`
+		Endpoint     string `yaml:"endpoint"`
+		AccessID     string `yaml:"access_id"`
 		AccessSecret string `yaml:"access_secret"`
 		Bucket       string `yaml:"bucket"`
-		Endpoint     string `yaml:"endpoint"`
 	} `yaml:"oss"`
-	COS struct {
-		Region    string `yaml:"region"`
-		AppId     string `yaml:"app_id"`
-		SecretID  string `yaml:"secret_id"`
-		SecretKey string `yaml:"secret_key"`
-		Bucket    string `yaml:"bucket"`
-	}
 	Ctx any
 }
 
-type FileStorage struct {
-	name            string
-	ins             types.Storager
-	uploadChunkSize int64
-	bufPool         *helper.SyncBuf
+// GetStorage 按配置创建存储实例，workDir 会作为所有对象 key 的前缀。
+func (f *File) GetStorage(workDir string) (*filex.FileStorage, error) {
+	if f.Default == "" {
+		return nil, errors.New("config:file 未配置 default")
+	}
+
+	ins, err := f.newStorage()
+	if err != nil {
+		return nil, err
+	}
+
+	return filex.NewFileStorage(ins, workDir), nil
 }
 
-func (f *File) GetStorage(workDir string) (*FileStorage, error) {
-	if f.Default == "" {
-		return nil, fmt.Errorf("config:file未配置默认storage")
-	}
-	if workDir != "" && workDir[len(workDir)-1] != '/' {
-		workDir += "/"
-	}
-	var connStr string
+// newStorage 按 default 装配驱动，未知驱动直接报错。
+func (f *File) newStorage() (filex.Storage, error) {
 	switch f.Default {
 	case "local":
-		localAbs, err := filepath.Abs(f.Local.RootDir)
+		ins, err := filex.NewLocal(f.Local.RootDir)
 		if err != nil {
-			return nil, fmt.Errorf("config:file配置的local异常:%v", err)
+			return nil, fmt.Errorf("config:file local 配置异常: %w", err)
 		}
-		localAbs = filepath.Clean(localAbs)
-		if err = os.MkdirAll(localAbs, 0755); err != nil {
-			return nil, fmt.Errorf("config:file异常, 无法创建目录 %s: %w", localAbs, err)
-		}
-		if localAbs != "" && localAbs[len(localAbs)-1] != '/' {
-			localAbs += "/"
-		}
-		connStr = fmt.Sprintf("fs://%s%s", localAbs, workDir)
-	case "oss":
-		connStr = fmt.Sprintf(
-			"oss://%s%s?credential=hmac:%s:%s&endpoint=https:%s",
-			f.OSS.Bucket,
-			workDir,
-			f.OSS.AccessId,
-			f.OSS.AccessSecret,
-			f.OSS.Endpoint,
-		)
-	default:
-		return nil, fmt.Errorf("config:file配置的storage无效")
-	}
 
-	var fs FileStorage
-	var err error
-	fs.name = f.Default
-	fs.ins, err = services.NewStoragerFromString(connStr)
-	fs.uploadChunkSize = 1024 * 1024 * 2
-	fs.bufPool = helper.NewSyncBuf()
-	return &fs, err
+		return ins, nil
+	case "oss":
+		ins, err := filex.NewOSS(filex.OSSOptions{
+			Region:   f.OSS.Region,
+			Endpoint: f.OSS.Endpoint,
+			AccessID: f.OSS.AccessID,
+			Secret:   f.OSS.AccessSecret,
+			Bucket:   f.OSS.Bucket,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("config:file oss 配置异常: %w", err)
+		}
+
+		return ins, nil
+	default:
+		return nil, fmt.Errorf("config:file default 无效: %s", f.Default)
+	}
 }
 
+// IsFS 表示当前使用本地文件系统存储。
 func (f *File) IsFS() bool {
 	return f.Default == "local"
 }
 
+// GetFSAbsDir 返回本地存储的绝对根目录，不存在时自动创建。
 func (f *File) GetFSAbsDir() (string, error) {
-	localAbs, err := filepath.Abs(f.Local.RootDir)
+	abs, err := filepath.Abs(f.Local.RootDir)
 	if err != nil {
-		return "", fmt.Errorf("获取绝对路径失败: %v", err)
-	}
-	localAbs = filepath.Clean(localAbs)
-	if err = os.MkdirAll(localAbs, 0755); err != nil {
-		return "", fmt.Errorf("无法创建目录 %s: %w", localAbs, err)
+		return "", fmt.Errorf("获取绝对路径失败: %w", err)
 	}
 
-	return localAbs, nil
+	abs = filepath.Clean(abs)
+	if err = os.MkdirAll(abs, 0o755); err != nil {
+		return "", fmt.Errorf("无法创建目录 %s: %w", abs, err)
+	}
+
+	return abs, nil
 }
 
+// GetBaseUrl 返回对象的对外访问前缀 + path，local 用 file:// 协议。
 func (f *File) GetBaseUrl(path string) string {
 	if path == "" {
 		return ""
 	}
+
 	if path[0] != '/' {
 		path = "/" + path
 	}
+
 	switch f.Default {
 	case "local":
-		return fmt.Sprintf("fs://%s", path)
+		root, err := f.GetFSAbsDir()
+		if err != nil {
+			return ""
+		}
+
+		return "file://" + root + path
 	case "oss":
-		return fmt.Sprintf("https://%s.%s%s", f.OSS.Bucket, f.OSS.Endpoint, path)
+		host := "oss-" + f.OSS.Region + ".aliyuncs.com"
+		if f.OSS.Endpoint != "" {
+			host = strings.TrimPrefix(strings.TrimPrefix(f.OSS.Endpoint, "https://"), "http://")
+		}
+
+		return fmt.Sprintf("https://%s.%s%s", f.OSS.Bucket, strings.TrimSuffix(host, "/"), path)
 	}
 
 	return ""
-}
-
-func (s *FileStorage) Stat(path string) (*types.Object, error) {
-	return s.ins.Stat(path)
-}
-
-func (s *FileStorage) SetUploadChunkSize(chunkSize int64) {
-	s.uploadChunkSize = chunkSize
-}
-
-func (s *FileStorage) isFS() bool {
-	return s.name == "local"
-}
-
-func (s *FileStorage) upload(data interface{}, processFunc func(bs []byte), auto bool) error {
-	var fileName string
-	var fileSize int64
-	var fileReader io.Reader
-	var multipartFun func(fn func(part types.Part)) error = nil
-
-	switch dataVal := data.(type) {
-	case string:
-		file, err := os.Open(dataVal)
-		if err != nil {
-			return err
-		}
-		defer func(file *os.File) {
-			_ = file.Close()
-		}(file)
-
-		// 获取文件状态信息
-		fileInfo, err := file.Stat()
-		if err != nil {
-			return err
-		}
-		fileName = filepath.Base(file.Name())
-		fileSize = fileInfo.Size()
-		fileReader = file
-		multipartFun = func(fn func(part types.Part)) error {
-			return s.MultipartUploadByPath(dataVal, fn)
-		}
-	case *multipart.FileHeader:
-		file, err := dataVal.Open()
-		if err != nil {
-			return err
-		}
-		defer func(file multipart.File) {
-			_ = file.Close()
-		}(file)
-
-		fileName = filepath.Base(dataVal.Filename)
-		fileSize = dataVal.Size
-		fileReader = file
-		multipartFun = func(fn func(part types.Part)) error {
-			return s.MultipartUploadByFileHeader(dataVal, fn)
-		}
-	default:
-		return errors.New("错误的data参数")
-	}
-
-	if auto && fileSize > 10*1024*1024 && !s.isFS() {
-		var fn func(part types.Part) = nil
-		if processFunc != nil {
-			fn = func(part types.Part) {
-				m, _ := helper.Marshal(part)
-				processFunc(m)
-			}
-		}
-		return multipartFun(fn)
-	}
-
-	var opts = make([]types.Pair, 0)
-	if processFunc != nil {
-		opts = append(opts, pairs.WithIoCallback(processFunc))
-	}
-
-	_, err := s.ins.Write(fileName, fileReader, fileSize, opts...)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *FileStorage) UploadByPath(path string, processFunc func(bs []byte), auto bool) error {
-	return s.upload(path, processFunc, auto)
-}
-
-func (s *FileStorage) UploadByFileHeader(fileHeader *multipart.FileHeader, processFunc func(bs []byte), auto bool) error {
-	return s.upload(fileHeader, processFunc, auto)
-}
-
-func (s *FileStorage) MultipartUploadByFileHeader(fileHeader *multipart.FileHeader, processFunc func(part types.Part)) error {
-	f, err := fileHeader.Open()
-	if err != nil {
-		return err
-	}
-	defer func(f multipart.File) {
-		_ = f.Close()
-	}(f)
-
-	return s.multipartUpload(fileHeader.Filename, fileHeader.Size, f, processFunc)
-}
-
-func (s *FileStorage) MultipartUploadByPath(path string, processFunc func(part types.Part)) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer func(file *os.File) {
-		_ = file.Close()
-	}(file)
-
-	// 获取文件状态信息
-	fileInfo, err := file.Stat()
-	if err != nil {
-		return err
-	}
-
-	return s.multipartUpload(fileInfo.Name(), fileInfo.Size(), file, processFunc)
-}
-
-func (s *FileStorage) multipartUpload(dstPath string, fileSize int64, srcReader io.Reader, processFunc func(part types.Part)) error {
-
-	multipartStorage, ok := s.ins.(types.Multiparter)
-	if !ok {
-		return fmt.Errorf("multiparter unimplemented for %s", s.name)
-	}
-	multipartIns, err := multipartStorage.CreateMultipart(dstPath)
-	if err != nil {
-		return fmt.Errorf("CreateMultipart %v: %v", dstPath, err)
-	}
-
-	// 设置每个分片的大小,2MB
-	partSize := s.uploadChunkSize
-	offset := int64(0)
-	index := 1
-	var uploadParts []*types.Part
-	for offset < fileSize {
-		// 计算当前分片大小
-		remaining := fileSize - offset
-		currentPartSize := partSize
-		if remaining < partSize {
-			currentPartSize = remaining
-		}
-
-		n, part, err := multipartStorage.WriteMultipart(multipartIns, srcReader, currentPartSize, index)
-		if err != nil {
-			return fmt.Errorf("WriteMultipart %v: %v, len:%d", dstPath, err, n)
-		}
-		if processFunc != nil && part != nil {
-			go processFunc(*part)
-		}
-		uploadParts = append(uploadParts, part)
-		offset += currentPartSize
-		index++
-	}
-
-	err = multipartStorage.CompleteMultipart(multipartIns, uploadParts)
-	if err != nil {
-		return fmt.Errorf("CompleteMultipart %v: %v", dstPath, err)
-	}
-
-	hlog.Debugf("path[%s] multipart upload size: %dMB", dstPath, fileSize/1024/1024)
-	return nil
-}
-
-func (s *FileStorage) DownloadFile(path string, targetPath string) error {
-	_, err := s.ins.Stat(path)
-	if err != nil {
-		return err
-	}
-
-	file, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		return err
-	}
-	defer func(file *os.File) {
-		_ = file.Close()
-	}(file)
-
-	var buf bytes.Buffer
-	_, err = s.ins.Read(path, &buf)
-	if err != nil {
-		return err
-	}
-
-	_, err = file.Write(buf.Bytes())
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// MultiPartDownload 多块并行下载
-// todo not final
-func (s *FileStorage) MultiPartDownload(path string, targetFile *os.File, partOffset, partSize int64) error {
-
-	var offset = partOffset
-	var chunkSize int64 = 2 * 1024 * 1024
-	var chunkNum = int(partSize/chunkSize) + 1
-
-	for i := 0; i < chunkNum; i++ {
-		index := i
-		var buf bytes.Buffer
-		if index+1 == chunkNum {
-			chunkSize = partOffset + partSize - offset
-		}
-		bytesRead, err := s.ins.Read(path, &buf, pairs.WithOffset(offset), pairs.WithSize(chunkSize))
-		if err != nil && !errors.Is(err, io.EOF) {
-			return err
-		}
-		if bytesRead == 0 {
-			break
-		}
-
-		// 文件指定位置写入
-		_, err = targetFile.WriteAt(buf.Bytes()[:bytesRead], offset)
-		if err != nil {
-			return err
-		}
-		offset += chunkSize
-	}
-
-	return nil
 }

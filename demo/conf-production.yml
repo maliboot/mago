@@ -38,6 +38,8 @@ file:
     ## 可以使用如nginx搭建静态资源服务，需要确保该路径可以访问，
     base_url: http://127.0.0.1:3000
   oss:
+    ## region 与 endpoint 至少配置一个；只配 endpoint 时按域名推导 region
+    region: cn-chongqing
     access_id: foo
     access_secret: foo
     bucket: foo
