@@ -3,30 +3,33 @@ package mago
 import "testing"
 
 func Test_errorContext_Msg(t *testing.T) {
-	type fields struct {
-		errorCode ErrorCode
-		template  map[string]string
-		msg       string
-	}
 	tests := []struct {
 		name   string
-		fields fields
+		code   ErrorCode
+		msg    string
+		tplKey string
+		tplVal string
 		want   string
 	}{
 		{
 			name:   "test-error-code",
-			fields: fields{errorCode: ErrServerError, template: map[string]string{"%id%": "325"}, msg: ErrServerError.String() + "[id=%id%]"},
+			code:   ErrServerError,
+			msg:    ErrServerError.String() + "[id=%id%]",
+			tplKey: "%id%",
+			tplVal: "325",
 			want:   "服务器异常[id=325]",
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e := &errorContext{
-				code:     tt.fields.errorCode,
-				msg:      tt.fields.msg,
-				httpCode: tt.fields.errorCode.HttpCode(),
-				template: tt.fields.template,
+				code:     tt.code,
+				msg:      tt.msg,
+				httpCode: tt.code.HttpCode(),
 			}
+			e.template.Store(tt.tplKey, tt.tplVal)
+
 			if got := e.Msg(); got != tt.want {
 				t.Errorf("Msg() = %v, want %v", got, tt.want)
 			}

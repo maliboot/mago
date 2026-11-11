@@ -192,12 +192,12 @@ func (j *JWTConf) jwtMiddlewareInit() (*jwt.HertzJWTMiddleware, error) {
 		},
 	})
 	if j.hertzJWTErr != nil {
-		return nil, fmt.Errorf("jwt.New() Error:" + j.hertzJWTErr.Error())
+		return nil, fmt.Errorf("jwt.New() Error: %w", j.hertzJWTErr)
 	}
 
 	errInit := j.hertzJWT.MiddlewareInit()
 	if errInit != nil {
-		return nil, fmt.Errorf("jwt.MiddlewareInit() Error:" + errInit.Error())
+		return nil, fmt.Errorf("jwt.MiddlewareInit() Error: %w", errInit)
 	}
 
 	return j.hertzJWT, nil
