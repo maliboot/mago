@@ -58,7 +58,7 @@ func NewServer(redisOpt asynq.RedisConnOpt, cacheDir string, concurrency int, ag
 		redisOpt:           redisOpt,
 		config:             &config,
 		inspector:          asynq.NewInspector(redisOpt),
-		archiver:           archiveq.NewArchiver(ctx, cacheDir),
+		archiver:           nil, // archiveq.NewArchiver(ctx, cacheDir)
 		aggregatorMaxSize:  aggregatorMaxSize,
 		aggregatorMaxDelay: aggregatorMaxDelay,
 	}
@@ -100,9 +100,11 @@ func (r *Server) Start(_ context.Context) error {
 		return fmt.Errorf("redis队列异常: %v", err)
 	}
 
-	err = r.archiver.Start()
-	if err != nil {
-		return fmt.Errorf("redis队列归档器异常: %v", err)
+	if r.archiver != nil {
+		err = r.archiver.Start()
+		if err != nil {
+			return fmt.Errorf("redis队列归档器异常: %v", err)
+		}
 	}
 	return r.srv.Start(r.mux)
 }
@@ -160,34 +162,36 @@ func (r *Server) flushQueueMessages(queue string, limit int, isSuccess bool) int
 		return 0
 	}
 
-	var archiveMsgList = make([]*archiveq.ArchiverMessage, msgListLen)
-	for i, msg := range msgList {
-		msgRet := 1
-		createTime := msg.NextProcessAt
-		if !isSuccess {
-			msgRet = 0
-			createTime = msg.LastFailedAt
+	if r.archiver != nil {
+		var archiveMsgList = make([]*archiveq.ArchiverMessage, msgListLen)
+		for i, msg := range msgList {
+			msgRet := 1
+			createTime := msg.NextProcessAt
+			if !isSuccess {
+				msgRet = 0
+				createTime = msg.LastFailedAt
+			}
+			if createTime.IsZero() {
+				createTime = time.Now()
+			}
+			createTimeStr := createTime.Format(time.DateTime)
+			archiveMsgList[i] = &archiveq.ArchiverMessage{
+				TaskID:    msg.ID,
+				Name:      msg.Queue,
+				Body:      msg.Payload,
+				TaskGroup: msg.Headers[dispatcher.TaskHeadGuid],
+				Result:    msgRet,
+				ResultTxt: msg.LastErr,
+				Ext:       "",
+				Created:   createTimeStr,
+				Updated:   createTimeStr,
+			}
 		}
-		if createTime.IsZero() {
-			createTime = time.Now()
+		err = r.archiver.Add(isSuccess, archiveMsgList)
+		if err != nil {
+			logq.Log.Errorf("flushQueueMessages[%v]Err.11:%v", isSuccess, err)
+			return 0
 		}
-		createTimeStr := createTime.Format(time.DateTime)
-		archiveMsgList[i] = &archiveq.ArchiverMessage{
-			TaskID:    msg.ID,
-			Name:      msg.Queue,
-			Body:      msg.Payload,
-			TaskGroup: msg.Headers[dispatcher.TaskHeadGuid],
-			Result:    msgRet,
-			ResultTxt: msg.LastErr,
-			Ext:       "",
-			Created:   createTimeStr,
-			Updated:   createTimeStr,
-		}
-	}
-	err = r.archiver.Add(isSuccess, archiveMsgList)
-	if err != nil {
-		logq.Log.Errorf("flushQueueMessages[%v]Err.11:%v", isSuccess, err)
-		return 0
 	}
 
 	if !isSuccess {
@@ -266,6 +270,10 @@ func (r *Server) RegisterErrorHandlerFunc(handlerFunc dispatcher.ErrorHandlerFun
 }
 
 func (r *Server) ArchiverGet(ctx context.Context, isSuccess bool, page, pageSize int, ext map[string]string) ([]*archiveq.ArchiverMessage, error) {
+	if r.archiver == nil {
+		return nil, nil
+	}
+
 	taskGroup := ""
 	name := ""
 	if len(ext) != 0 {
