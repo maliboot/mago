@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -88,11 +89,23 @@ func (q *QueueConf) initialize() error {
 	return nil
 }
 
-func (q *QueueConf) MustGetClient() queuex.Client {
+// GetClient 返回队列客户端；队列服务尚未初始化时返回错误。
+// 业务侧（如异步任务发布）用它做降级判断，不要用 Must 版本把进程打死。
+func (q *QueueConf) GetClient() (queuex.Client, error) {
 	if q.clt == nil {
-		hlog.Fatal("队列服务未启动，不可以使用队列客户端")
+		return nil, errors.New("队列服务未启动，不可以使用队列客户端")
 	}
-	return q.clt
+
+	return q.clt, nil
+}
+
+func (q *QueueConf) MustGetClient() queuex.Client {
+	clt, err := q.GetClient()
+	if err != nil {
+		hlog.Fatal(err)
+	}
+
+	return clt
 }
 
 func (q *QueueConf) MustGetServer() queuex.Server {

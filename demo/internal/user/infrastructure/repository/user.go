@@ -66,7 +66,14 @@ func (r *User) ByID(ctx context.Context, id uint) (*vo.UserVO, error) {
 func (r *User) Create(ctx context.Context, user *domain.User) error {
 	do := convertor.UserToDO(user)
 
-	return r.TxDB(ctx, *do).Create(do).Error
+	if err := r.TxDB(ctx, *do).Create(do).Error; err != nil {
+		return err
+	}
+
+	// 回填自增主键：聚合拿到身份后才能用于后续事件/日志
+	user.ID = uint(do.ID)
+
+	return nil
 }
 
 func (r *User) Update(ctx context.Context, user *domain.User) error {

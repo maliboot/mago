@@ -41,3 +41,8 @@ func provideTokenIssuer(t *repository.Token) application.TokenIssuer {
 func provideCodeSender(s *repository.SMTP) application.CodeSender {
 	return s
 }
+
+// provideTaskQueue 把 queuex（优先 redis）的发布适配器绑定到异步任务端口。
+func provideTaskQueue(q *repository.Queue) application.TaskQueue {
+	return q
+}

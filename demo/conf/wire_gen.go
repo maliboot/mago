@@ -10,6 +10,7 @@ import (
 	"github.com/maliboot/mago/config"
 	"tests/internal/user/adapter/http"
 	"tests/internal/user/adapter/mcp"
+	"tests/internal/user/adapter/mq"
 	"tests/internal/user/application"
 	"tests/internal/user/infrastructure/repository"
 )
@@ -29,12 +30,16 @@ func InitHandler(c *config.Conf) (*Handler, error) {
 	smtp := provideSMTPConf(c)
 	repositorySMTP := repository.NewSMTP(smtp)
 	codeSender := provideCodeSender(repositorySMTP)
-	userService := application.NewUserService(userGateway, userQuery, passwordHasher, tokenIssuer, codeSender)
+	queue := repository.NewQueue(c)
+	taskQueue := provideTaskQueue(queue)
+	userService := application.NewUserService(userGateway, userQuery, passwordHasher, tokenIssuer, codeSender, taskQueue)
 	userController := http.NewUserController(userService)
 	userMcp := mcp.NewUserMcp(userService)
+	userConsumer := mq.NewUserConsumer()
 	handler := &Handler{
 		user: userController,
 		mcp:  userMcp,
+		mq:   userConsumer,
 	}
 	return handler, nil
 }

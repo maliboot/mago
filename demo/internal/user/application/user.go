@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -10,8 +11,11 @@ import (
 	"time"
 
 	"github.com/maliboot/mago"
+	"github.com/maliboot/mago/dispatcher"
+	"github.com/maliboot/mago/logx"
 
 	"tests/internal/user/client"
+	"tests/internal/user/client/constant"
 	"tests/internal/user/client/dto"
 	"tests/internal/user/client/vo"
 	"tests/internal/user/domain"
@@ -45,6 +49,7 @@ type userService struct {
 	hasher  PasswordHasher
 	tokens  TokenIssuer
 	codes   CodeSender
+	tasks   TaskQueue
 }
 
 // NewUserService 由启动入口注入出站端口、读模型与签发能力。
@@ -55,6 +60,7 @@ func NewUserService(
 	hasher PasswordHasher,
 	tokens TokenIssuer,
 	codes CodeSender,
+	tasks TaskQueue,
 ) UserService {
 	return &userService{
 		users:   users,
@@ -62,6 +68,7 @@ func NewUserService(
 		hasher:  hasher,
 		tokens:  tokens,
 		codes:   codes,
+		tasks:   tasks,
 	}
 }
 
@@ -121,7 +128,35 @@ func (s *userService) Register(ctx context.Context, req *dto.UserAuthRequest) *m
 		return mago.NewVO[mago.EmptyVO](err, nil)
 	}
 
-	return mago.NewVO[mago.EmptyVO](s.users.Create(ctx, user), nil)
+	if err := s.users.Create(ctx, user); err != nil {
+		return mago.NewVO[mago.EmptyVO](err, nil)
+	}
+
+	s.publishRegistered(ctx, user)
+
+	return mago.NewVO[mago.EmptyVO](nil, nil)
+}
+
+// publishRegistered 把「用户已注册」事件投给异步队列（优先 redis，README §12.3）。
+// 注册已落库，投递失败只降级告警、不回滚也不阻断；需要强一致时改 Outbox（README §14.1 第 7 条）。
+func (s *userService) publishRegistered(ctx context.Context, user *domain.User) {
+	if s.tasks == nil {
+		return
+	}
+
+	payload, err := json.Marshal(dto.UserRegisteredEvent{
+		UserID: user.ID,
+		Email:  user.Email,
+		At:     mago.DateTime{Time: time.Now()},
+	})
+	if err != nil {
+		logx.GroupWarnf("queue", "用户注册事件序列化失败: %v", err)
+		return
+	}
+
+	if err := s.tasks.Enqueue(ctx, dispatcher.NewTask(constant.TaskUserRegistered, nil, payload)); err != nil {
+		logx.GroupWarnf("queue", "用户注册事件入队失败: %v", err)
+	}
 }
 
 func (s *userService) Me(ctx context.Context, userID uint) *mago.VO[vo.UserVO] {

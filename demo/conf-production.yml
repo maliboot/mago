@@ -45,13 +45,13 @@ file:
     bucket: foo
     endpoint: oss-cn-chongqing.aliyuncs.com
 queue:
-  ## 默认sqlite
-  default: sqlite
+  ## 队列实现：优先 redis（README §12.3）；本地没有 redis 时改回 sqlite（仅单实例）
+  default: redis
   concurrency: 4
   ## redis version >= 4.0
   redis:
-    # redis://[:password@]host[:port][/dbnumber]
-    dsn: redis://user:password@foo.com:6379/10
+    # redis://[:***@]host[:port][/dbnumber]
+    dsn: redis://127.0.0.1:6379/0
   ## 队列聚合 max_size为聚合最大等待任务量, max_delay为聚合最大等待时间(ms)。两者有一个为0则默认不聚合
   aggregator_max_size: 10
   aggregator_max_delay: 5000

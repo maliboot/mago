@@ -8,13 +8,15 @@ import (
 	"tests/conf/server"
 	userhttp "tests/internal/user/adapter/http"
 	usermcp "tests/internal/user/adapter/mcp"
+	usermq "tests/internal/user/adapter/mq"
 )
 
-// Handler 汇总所有上下文的入口 handler（HTTP controller + MCP 工具声明），由 wire 装配后注入组合根。
-// 它只持有 adapter 实例：不构造协议引擎、不启动、不写业务。
+// Handler 汇总所有上下文的入口 handler（HTTP controller + MCP 工具声明 + MQ 任务声明），
+// 由 wire 装配后注入组合根。它只持有 adapter 实例：不构造协议引擎、不启动、不写业务。
 type Handler struct {
 	user *userhttp.UserController
 	mcp  *usermcp.UserMcp
+	mq   *usermq.UserConsumer
 }
 
 // Bind 接收 server engine，把各上下文的路由与协议入口挂上去；新增上下文只改这里。
@@ -32,4 +34,10 @@ func (h *Handler) Bind(hs *mago.Http, mcpSrv *server.McpServer, c *config.Conf) 
 // 协议引擎在 conf/server/mcp.go，工具定义留在各上下文 adapter/mcp。
 func (h *Handler) McpRegistrars() []server.ToolRegistrar {
 	return []server.ToolRegistrar{h.mcp}
+}
+
+// TaskRegistrars 返回各上下文的 MQ 任务声明，供 server.NewQueueServer 装配队列服务。
+// 队列实现在 conf/server/queue.go，任务处理器留在各上下文 adapter/mq。
+func (h *Handler) TaskRegistrars() []server.TaskRegistrar {
+	return []server.TaskRegistrar{h.mq}
 }

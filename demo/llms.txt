@@ -16,17 +16,19 @@
 | 路径 | 放什么 |
 | --- | --- |
 | `cmd/server/main.go` | 唯一进程入口 + 汇总：`-f` 参数、`Bootstrap(false)`、补 `ServerMachineId`、造 Server engine（`server.NewHttpServer` / `server.NewMQTTServer`）、`conf.InitHandler(c)` 拿 handler 图、挂 OSRuntime 监控、`NewApp(...).Run()`；`terminated` 视为正常停机（§11.1） |
-| `cmd/server/main.go` 的 `NewApp` | `func NewApp(c *config.Conf, hs *mago.Http, mqtt *emqx.MQTT, mcpSrv *server.McpServer, handlers *conf.Handler) *mago.App`：`handlers.Bind(hs, mcpSrv, c)` → 汇总非 nil Server → `mago.New`；**形参禁止出现 adapter 实例**（`*UserController`/`*UserMcp`），那些只经 `conf.Handler` 传入 |
+| `cmd/server/main.go` 的 `NewApp` | `func NewApp(c *config.Conf, hs *mago.Http, mqtt *emqx.MQTT, mcpSrv *server.McpServer, queue queuex.Server, handler *conf.Handler) *mago.App`：`handler.Bind(hs, mcpSrv, c)` → 汇总非 nil Server → `mago.New`；**形参禁止出现 adapter 实例**（`*UserController`/`*UserMcp`），那些只经 `conf.Handler` 传入 |
 | `conf/wire.go` | 依赖图：`//go:build wireinject` + `InitHandler(c *config.Conf) (*Handler, error)` 里的 `wire.Build(...)`；文件里只放这一个函数（§11.5） |
 | `conf/wire_gen.go` | wire 生成物（`!wireinject`），入库、禁手改；改 provider 后必须重跑 `go tool wire ./conf` |
 | `conf/provider.go` | 桥接 provider：子配置切片（`provideSMTPConf`）、端口绑定（`provideUserGateway`/`provideUserQuery`/`providePasswordHasher`/`provideTokenIssuer`/`provideCodeSender`），函数体只 return，不写逻辑 |
 | `conf/handler.go` | `Handler`（wire 用 `wire.Struct` 填充，同包未导出字段）+ `Bind(hs *mago.Http, mcpSrv *server.McpServer, c *config.Conf)` 挂 controller 路由与 `/mcp` + `McpRegistrars() []server.ToolRegistrar` 给 MCP 引擎供工具清单；只挂不 new |
 | `conf/server/mcp.go` | MCP **协议引擎**：`McpServer`（`sdk.Server` + Streamable HTTP handler）、`ToolRegistrar` 接口、`NewMcpServer(c, registrars...)`（元信息取 `app_name`）；不写任何工具定义（§7.3） |
 | `conf/server/http.go` | `NewHttpServer(c)`：hertz server + 通用中间件（access log / request id / recovery / static / ping）+ `TenantJwtInit`，不含业务路由（§11.2） |
-| `conf/server/queue.go` `mqtt.go` `copool.go` | `NewQueueServer` / `NewMQTTServer` / `NewCoPool`：入参 `*config.Conf`，只有「读配置 → 调框架构造函数 → 返回」；未启用返回 nil |
+| `conf/server/queue.go` | `TaskRegistrar` 接口 + `NewQueueServer(c, registrars...)`：初始化队列服务（优先 redis）并把各上下文任务注册上去；未配置返回 nil |
+| `conf/server/mqtt.go` `copool.go` | `NewMQTTServer` / `NewCoPool`：入参 `*config.Conf`，只有「读配置 → 调框架构造函数 → 返回」；未启用返回 nil |
 | `conf/conf.go` | 业务自定义配置 `Conf` + `New(c) (*Conf, error)`：从同一份 `conf.yml` 解码（`c.Scan`），不再有包级单例；无消费方时不要塞进 wire 图 |
 | `conf/middleware/print.go` | 自定义 hertz 中间件：`func Xxx() app.HandlerFunc`，横切后 `ctx.Next(c)`，不碰业务 |
 | `adapter/http/user.go` | HTTP 入口 `UserController`：绑定、校验、回写；路由 `POST /api/v1/user/users`、`POST /api/v1/user/sessions`、`POST /api/v1/user/users/verify-code`、`GET /api/v1/user/users/:id`；`route_test.go` 校验路由契约 |
+| `adapter/mq/user.go` | MQ 任务声明 `UserConsumer`：`RegisterTasks` 注册 `constant.TaskUserRegistered`（`user_registered`）处理器，`handleUserRegistered` 解析 `dto.UserRegisteredEvent`（demo 只落日志） |
 | `adapter/mcp/user.go` | MCP **工具声明** `UserMcp`：`RegisterTools(srv *sdk.Server)` 注册 `user_login`、`user_register`、`user_me`、`user_send_verify_code`，复用同一 dto/vo/service；不自建引擎、不提供 Handler（§7.3） |
 | `application/user.go` | `UserService`（Login/Register/Me/SendVerifyCode）、读端口 `UserQuery`、实现 `userService`、装配入口 `NewUserService` |
 | `application/port.go` | 技术能力端口：`PasswordHasher`、`TokenIssuer`、`CodeSender`（消费方定义） |
@@ -34,7 +36,9 @@
 | `client/api/user.go` | 跨上下文调用契约 |
 | `client/api/contracts.go` | 动作类接口白名单 `Actions`（未登记的动作路径视为违规） |
 | `client/dto/user.go` | 入参 `UserAuthRequest`（HTTP 与 MCP 共用一套） |
+| `client/dto/userregistered.go` | 队列载荷 `UserRegisteredEvent`（生产与消费共用契约） |
 | `client/vo/user.go` | 出参 `UserTokenVO`、`UserVO`，含 `NewXxxVO` 构造与 DO/Entity → VO 转换 |
+| `client/constant/task.go` | adapter 与 application 共享的常量（队列任务名 `TaskUserRegistered` 等）；两侧 import 同一份，禁各复制一份 |
 | `client/enum/user.go` | 对外枚举 `UserStatus`（string 字面量 `active`/`disabled`） |
 | `client/error.go` | 上下文错误码扩展（`ErrUserDisabled=401501`、`ErrEmailTaken=422101`） |
 | `domain/user.go` | 聚合 `User`（只有聚合根时直接单文件，不建目录；见 §4.5）：导出字段 + `NewUser`/`RestoreUser`/`NormalizeEmail`/`CanLogin`/`MarkLoggedIn` |
@@ -45,6 +49,7 @@
 | `infrastructure/repository/token.go` | JWT 签发，实现 application 的 `TokenIssuer` |
 | `infrastructure/repository/migration.go` | 数据迁移：AutoMigrate 建表 + 默认种子用户「张三」（幂等，已存在则跳过且不覆盖密码） |
 | `adapter/script/seeduser/main.go` | 迁移入口脚本：`cd demo && go run ./internal/user/adapter/script/seeduser -f ./conf.yml` |
+| `infrastructure/repository/queue.go` | 异步任务发布（`queuex` redis，实现 application 的 `TaskQueue`；`conf.Queue.GetClient()` 取客户端） |
 | `infrastructure/repository/sequence.go`（见下） | 本机内存编号计数器 |
 | `infrastructure/repository/weather.go` | 天气查询 HTTP 适配器（open-meteo 免密钥）：拼 query、ctx 超时、响应体限流、非 200 与坏 JSON 归一 |
 | `infrastructure/do/http/currentweather.go` / `currentweatherresult.go` | 天气查询的请求 / 响应报文 DO（按通用分类 `http`） |
@@ -73,14 +78,14 @@
 | JSON 命名 | 对外字段一律小驼峰（employeeNo）；库表保持 snake_case，映射在 `convertor` 完成，禁把列名暴露到 API（§7.5、§9） |
 | 聚合组织 | domain 一个聚合一个位置：只有聚合根就单文件（`domain/user.go`）；有实体/值对象时建 `domain/<聚合>/`，一个类型一个 go 文件且每个文件至少一个 struct；端口不混进聚合目录（§4.5） |
 | 事务 | 只在 application 开：需要事务的写端口声明 `WithTransaction(ctx, fn)`（与 `mago.AbstractRepository.WithTransaction` 签名一致，仓储免实现）；仓储内部取连接一律 `TxDB(ctx, do)`，禁 `DB(do)`（绕过事务）；事务句柄只经 ctx 传（`mago.WithTx`/`mago.TxFromCtx`），同一 ctx 下不同仓储自动同一事务；事务体内禁外部 HTTP / 发消息、禁再开事务（§14.1、§14.2） |
-| 时间字段 | 统一 `mago.DateTime`：`GormDataType()` 必须返回 `"time"`（返回 `"datetime"` 会让 autoCreateTime/autoUpdateTime 写 unix 秒，MySQL 报 1292），列类型由 `GormDBDataType()` 控制；零值写 NULL、JSON null；写入与 `NowFunc` 都截断到秒；`CreatedAt`/`UpdatedAt` 名字会被 GORM 按名自动填充（§12.4） |
+| 时间字段 | 统一 `mago.DateTime`：`GormDataType()` 必须返回 `"time"`（返回 `"datetime"` 会让 autoCreateTime/autoUpdateTime 写 unix 秒，MySQL 报 1292），列类型由 `GormDBDataType()` 控制；零值写 NULL、JSON null；写入与 `NowFunc` 都截断到秒；`CreatedAt`/`UpdatedAt` 名字会被 GORM 按名自动填充；`MarshalJSON` 必须值接收者（非指针字段 json 不取地址，否则输出 RFC3339 带纳秒）（§12.4） |
 | 数据迁移 | 迁移与修数入口放 `internal/<ctx>/adapter/script/`（与 cmd 同属组合根，可 import 任意层）；可重复执行的逻辑（建表、种子数据）写 `infrastructure/repository/migration.go`；不建 `migrations/` 目录（§2.3、§17） |
 | 启动装配 | 进程入口只有 `cmd/<app>/main.go`（flag、配置、造 Server engine、`InitHandler`、`NewApp`、`Run`）；`NewApp` 返回 `mago.App`，形参只允许 配置 + Server engine + `conf.Handler`，**禁止出现 adapter 内实例**；依赖图写在 `conf/wire.go`（build tag wireinject，只放 `InitHandler`），桥接 provider 在 `conf/provider.go`，`conf/handler.go` 汇总 adapter 入口并 `Bind` 到 engine，`conf/wire_gen.go` 是生成物（入库、禁手改）；MCP 引擎在 `conf/server/mcp.go`，`adapter/mcp` 只实现 `RegisterTools`；`conf/` 只装配不写业务，`internal/` 不得 import `conf/`（§11、§17） |
 | wire 装配 | 注入器只能有一个返回值（可加 `error`），多返回值不支持；按类型注入，一个类型只能有一个 provider；concrete → interface 必须显式桥接；同一实例绑多端口用两个桥接函数指向同一 concrete；子配置用切片 provider；provider 不放 `wire.go`（会被复制进生成物）；没消费方的 provider 会报 unused；改完必须 `go tool wire ./conf` 并提交生成物（§11.5） |
 | 构造函数与单例 | 每个 `NewXxx` 先判断是否需要进程内唯一并写进注释：持有唯一状态/昂贵连接的对象做单例（`sync.Once`，如编号计数器 `NewSequence`），无状态或按配置装配的保持每次新建由组合根注入；禁止裸 `if ins == nil`，单例要给测试留隔离出口（§16.8） |
 | infrastructure 逻辑落位 | infrastructure 里的功能逻辑（散列、签发、HTTP、计数、文件读写）一律 `repository/<实现>.go`（配 `do/<通用分类>/`），禁止在 infrastructure 根目录或 `util/` 另开文件实现（§2.4、§7.4） |
 | 外部服务封装 | 第三方开放平台、SMTP 等短连接，以及本机内存/磁盘操作：结构放 `infrastructure/do/<通用分类>/`（db/cache/mq/http/mail/rpc，禁按业务功能建包），读写与并发逻辑放 `infrastructure/repository/<实现>.go`，一个实现一个文件（§7.4） |
-| 定时任务与队列 | 定时任务：对多副本无副作用的优先 `helper.Cron(ctx, cronName, interval, task)`（`helper/corn.go`，进程内 ticker，勿改名）；有副作用（发券/扣款/通知/流水号）必须入队（`dispatcher.TaskID` 去重）或加分布式锁，并在注释说明为何不重复。消息队列：优先 `queuex/redisq`（`queue.default: redis` + `queue.redis.dsn`，装配在 `conf/server/queue.go`），业务只依赖 `queuex.Server`/`queuex.Client`；sqlite 队列只用于单实例/本地；禁绕过 queuex 直接 import `asynq`/`kafka-go`/`nsq`（§12.3、§16.6） |
+| 定时任务与队列 | 定时任务：对多副本无副作用的优先 `helper.Cron(ctx, cronName, interval, task)`（`helper/corn.go`，进程内 ticker，勿改名）；有副作用（发券/扣款/通知/流水号）必须入队（`dispatcher.TaskID` 去重）或加分布式锁，并在注释说明为何不重复。消息队列：优先 `queuex/redisq`（`queue.default: redis` + `queue.redis.dsn`，装配在 `conf/server/queue.go`），业务只依赖 `queuex.Server`/`queuex.Client`；sqlite 队列只用于单实例/本地；禁绕过 queuex 直接 import `asynq`/`kafka-go`/`nsq`。demo 落地：任务名 `client/constant.TaskUserRegistered`、载荷 `client/dto.UserRegisteredEvent`、发布 `repository/queue.go`（实现 `application.TaskQueue`）、消费 `adapter/mq/user.go`、装配 `conf/server/queue.go` + `Handler.TaskRegistrars()`、配置 `queue.default: redis`（§12.3、§16.6） |
 | 依赖选型 | 协议/功能/开放平台接入按优先级取第一个可用方案：标准库 → mago 仓库组件 → 社区官方库 → 高热度且仍在维护的库 → 自己实现；跳级要写理由（§16.6） |
 | 文件命名 | Go 文件名默认全小写、单词直连（`useraddress.go`）；下划线只留给 `_test`、`_windows`、`_linux` 等特殊后缀，禁 `utils.go`、`helper.go`、`user_service.go`（§16.7） |
 | 目录禁区 | 不建 `docs/`、`migrations/`、`pkg/`、全局 `utils/`；迁移与修数脚本放 `internal/<ctx>/adapter/script/`（§2.3） |
@@ -103,7 +108,7 @@
 | 加一个 HTTP 中间件 | `conf/middleware/<关注点>.go`，`func Xxx() app.HandlerFunc`，横切后 `ctx.Next(c)`；在 `NewHttpServer` 或分组上 `Use` 挂载（§11.2） |
 | 加/改 MCP 工具 | 在 `adapter/mcp/<ctx>.go` 的 `RegisterTools` 里 `sdk.AddTool`（入参复用 `client/dto`）→ `conf/handler.go` 的 `McpRegistrars()` 补上下文 → 同步 `adapter/mcp/user_test.go` 的工具清单断言；引擎代码零改动（§7.3） |
 | 加定时任务 | `helper.Cron(ctx, "<ctx>.<动作>", interval, fn)`（多副本重复执行无副作用才用）；有副作用改走队列 + `dispatcher.TaskID` 去重，并在注释说明（§12.3） |
-| 加异步任务 | `dispatcher.NewTask(name, headers, payload, dispatcher.TaskID(...))` → `queueClient.EnqueueContext(ctx, task)` → `queueSrv.RegisterHandleFunc(name, fn)`；队列实现用 `queuex/redisq`（§12.3） |
+| 加异步任务 | 任务名 const 放 `client/constant`（adapter 与 application 共享）、载荷放 `client/dto` → 发布端口 `application.TaskQueue`（实现 `repository/queue.go`，`dispatcher.NewTask(..., dispatcher.TaskID(...))` + `EnqueueContext`）→ 消费 `adapter/mq/<ctx>.go` 的 `RegisterTasks` + `queueSrv.RegisterHandleFunc` → `Handler.TaskRegistrars()` 带上；队列实现 `queuex/redisq`（§12.3） |
 | 加业务配置项 | `conf/conf.go` 的 `Conf` 加字段（`yaml` 标签）→ 同一份 `conf.yml` 补键 → `New(c)` 返回值由 wire 注入给使用方；不改框架 `config.Conf`、不新开配置文件（§11.2） |
 
 ## 5. 校验命令
@@ -118,6 +123,9 @@ cd demo
 
 # 真库联调（仓库根 runtime/db.txt，只建 mago_live_ 前缀临时表并 DROP）
 cd .. && /usr/local/go/bin/go test -tags dblive -run "TestTxLive|TestDateTimeLive" -v -timeout 5m .
+
+# 真实 redis 队列联调（REDIS_URI 取自 runtime/db.txt；asynq 需 Redis ≥ 4.0，账上共享实例 3.2 会 SKIP）
+cd internal/user/infrastructure/repository && /usr/local/go/bin/go test -tags queuelive -run TestQueueLive -v -timeout 2m
 ```
 
 `internal/user/arch_test.go` 断言分层依赖；`adapter/mcp/user_test.go` 用官方 SDK 的内存 transport 跑协议级用例。`conf/wire_gen.go` 与源码不一致就用 `git diff --exit-code conf/wire_gen.go` 拦下。
@@ -154,7 +162,7 @@ cd .. && /usr/local/go/bin/go test -tags dblive -run "TestTxLive|TestDateTimeLiv
 - [DTO 与 Model 命名](README.md#9-dto-与-model-命名规范)
 - [跨 Bounded Context 通信](README.md#10-跨-bounded-context-通信)：client/api 契约
 - [启动装配](README.md#11-启动装配与依赖注入)：11.1 cmd/ 进程入口与 NewApp（形参禁 adapter 实例）、11.2 conf/ 装配层（Handler.Bind/Server/中间件/自定义配置）、11.3 构造函数注入与装配顺序、11.4 DI 规则、11.5 wire 装配（provider/桥接/生成物）
-- [跨上下文技术能力](README.md#12-跨上下文技术能力)：12.3 定时任务（helper.Cron）与消息队列（queuex/redisq）默认选型、12.4 时间字段 DateTime（GormDataType="time"、秒精度、真库联调）
+- [跨上下文技术能力](README.md#12-跨上下文技术能力)：12.3 定时任务（helper.Cron）与消息队列（queuex/redisq，demo 已接 redis 队列）、12.4 时间字段 DateTime（GormDataType="time"、秒精度、真库联调）
 - [错误处理](README.md#13-错误处理)：13.1 domain / 13.2 application / 13.4 原则
 - [事务管理](README.md#14-事务管理)：14.1 事务规则、14.2 事务写法（AbstractRepository.WithTransaction / TxDB，跨仓储共享）
 - [测试策略](README.md#15-测试策略)

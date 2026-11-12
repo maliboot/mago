@@ -5,13 +5,30 @@ import (
 	"github.com/maliboot/mago/queuex"
 )
 
-// NewQueueServer 构造队列 Server。注意：它会真正初始化队列客户端（sqlite/redis），
-// 且 copool.NewCoPool 依赖同一份客户端，所以「队列 + 协程池」必须成对启用。
-// demo 目前不启用队列，故两者都未加入 conf/wire.go 的依赖图；启用时一起加进 wire.Build。
-func NewQueueServer(c *config.Conf) queuex.Server {
-	if c.Queue == nil {
+// TaskRegistrar 由各上下文的 adapter/mq 实现：只声明本上下文消费的任务，不关心队列实现。
+// 接口在使用方（server）定义，adapter 反向实现，避免 adapter 依赖本包。
+type TaskRegistrar interface {
+	RegisterTasks(srv queuex.Server)
+}
+
+// NewQueueServer 构造并初始化队列服务，然后把各上下文登记的任务注册上去。
+// 队列实现由配置决定（README §12.3：优先 redis）；未配置队列时返回 nil，组合根跳过启动。
+// 注意：MustGetServer 会同时初始化客户端，repository.Queue 之后才能取到它；
+// copool.NewCoPool 也依赖同一份客户端，两者要成对启用。
+func NewQueueServer(c *config.Conf, registrars ...TaskRegistrar) queuex.Server {
+	if c.Queue == nil || c.Queue.Default == "" {
 		return nil
 	}
 
-	return c.Queue.MustGetServer()
+	srv := c.Queue.MustGetServer()
+
+	for _, registrar := range registrars {
+		if registrar == nil {
+			continue
+		}
+
+		registrar.RegisterTasks(srv)
+	}
+
+	return srv
 }

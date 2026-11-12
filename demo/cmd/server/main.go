@@ -14,6 +14,7 @@ import (
 	"github.com/maliboot/mago/config"
 	"github.com/maliboot/mago/emqx"
 	"github.com/maliboot/mago/helper"
+	"github.com/maliboot/mago/queuex"
 )
 
 var (
@@ -27,7 +28,7 @@ func init() {
 // NewApp 汇总已构造的 Server engine，返回可运行的 App。
 // 形参只允许配置、Server engine 与 conf.Handler；禁止出现 adapter 内实例（*UserController / *UserMcp …），
 // 那些由 wire 装配进 conf.Handler（conf.InitHandler），本函数只做「绑定 + 汇总」。
-func NewApp(c *config.Conf, hs *mago.Http, mqtt *emqx.MQTT, mcpSrv *server.McpServer, handler *conf.Handler) *mago.App {
+func NewApp(c *config.Conf, hs *mago.Http, mqtt *emqx.MQTT, mcpSrv *server.McpServer, queue queuex.Server, handler *conf.Handler) *mago.App {
 	// adapter 入口（HTTP 路由 + MCP 协议入口）绑定到 engine
 	handler.Bind(hs, mcpSrv, c)
 
@@ -35,6 +36,9 @@ func NewApp(c *config.Conf, hs *mago.Http, mqtt *emqx.MQTT, mcpSrv *server.McpSe
 	servers = append(servers, hs)
 	if mqtt != nil { // nil = 本次不启用
 		servers = append(servers, mqtt)
+	}
+	if queue != nil {
+		servers = append(servers, queue)
 	}
 
 	return mago.New(c.AppName, servers)
@@ -67,6 +71,7 @@ func main() {
 	hs := server.NewHttpServer(c)
 	mqttSrv := server.NewMQTTServer(c)
 	mcpSrv := server.NewMcpServer(c, handler.McpRegistrars()...)
+	queueSrv := server.NewQueueServer(c, handler.TaskRegistrars()...)
 
 	// os.runtime.log
 	if err := autoloadx.NewOSRuntime(c, nil, func(ctx context.Context) {}).Monitor(); err != nil {
@@ -74,7 +79,7 @@ func main() {
 	}
 
 	// start
-	if err := NewApp(c, hs, mqttSrv, mcpSrv, handler).Run(); err != nil {
+	if err := NewApp(c, hs, mqttSrv, mcpSrv, queueSrv, handler).Run(); err != nil {
 		if strings.Contains(err.Error(), "terminated") {
 			return
 		}

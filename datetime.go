@@ -29,7 +29,10 @@ var dateTimeLayouts = []string{
 	"2006-01-02",
 }
 
-func (t *DateTime) MarshalJSON() ([]byte, error) {
+// MarshalJSON 用值接收者：json.Marshal 对「非指针字段」（如 dto 里的 At DateTime）不会取地址，
+// 指针接收者的套件方法不会被看到，序列化会退化成 time.Time 的 RFC3339（带纳秒），
+// 而消费端按 "2006-01-02 15:04:05" 解析就会失败。
+func (t DateTime) MarshalJSON() ([]byte, error) {
 	if !t.Time.IsZero() {
 		return json.Marshal(fmt.Sprintf("%s", t.Format("2006-01-02 15:04:05")))
 	}

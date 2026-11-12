@@ -9,6 +9,7 @@ import (
 
 	userhttp "tests/internal/user/adapter/http"
 	usermcp "tests/internal/user/adapter/mcp"
+	usermq "tests/internal/user/adapter/mq"
 	"tests/internal/user/application"
 	"tests/internal/user/infrastructure/repository"
 )
@@ -27,16 +28,19 @@ func InitHandler(c *config.Conf) (*Handler, error) {
 		repository.NewPassword,
 		repository.NewToken,
 		repository.NewSMTP,
+		repository.NewQueue,
 
 		// application：技术端口由使用方定义，实现由 infrastructure 注入
 		providePasswordHasher,
 		provideTokenIssuer,
 		provideCodeSender,
+		provideTaskQueue,
 		application.NewUserService,
 
 		// adapter：HTTP 与 MCP 共用同一个 Service 实例
 		userhttp.NewUserController,
 		usermcp.NewUserMcp,
+		usermq.NewUserConsumer,
 
 		// 组合根产物：只装 adapter 入口，Server 由 main 的 NewApp 汇总
 		wire.Struct(new(Handler), "*"),

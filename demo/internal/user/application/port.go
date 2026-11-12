@@ -3,6 +3,8 @@ package application
 import (
 	"context"
 	"time"
+
+	"github.com/maliboot/mago/dispatcher"
 )
 
 // PasswordHasher 是密码散列能力端口，由 infrastructure 实现。
@@ -21,4 +23,10 @@ type CodeSender interface {
 // 令牌不是领域概念（JWT、有效期策略属于认证基础设施），domain 不需要认识它。
 type TokenIssuer interface {
 	Issue(ctx context.Context, subject string, expire time.Duration) (token string, expireAt time.Time, err error)
+}
+
+// TaskQueue 是异步任务发布端口（技术能力端口，消费方定义）：
+// 实现走 infrastructure 的 mago queuex（优先 redis 实现），见 README §12.3。
+type TaskQueue interface {
+	Enqueue(ctx context.Context, task *dispatcher.Task) error
 }

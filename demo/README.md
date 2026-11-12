@@ -96,7 +96,7 @@ demo/
 │   ├── server/
 │   │   ├── http.go          # NewHttpServer（server 构造 + 通用中间件）
 │   │   ├── mcp.go           # NewMcpServer（MCP 协议引擎）+ ToolRegistrar 接口
-│   │   ├── queue.go         # NewQueueServer
+│   │   ├── queue.go         # NewQueueServer（TaskRegistrar + 注册任务）
 │   │   ├── mqtt.go          # NewMQTTServer
 │   │   └── copool.go        # NewCoPool
 │   └── middleware/
@@ -109,6 +109,8 @@ demo/
     │   │   │   └── user.go         # HTTP Controller
     │   │   ├── mcp/
     │   │   │   └── user.go         # MCP 工具声明（协议引擎在 conf/server/mcp.go）
+    │   │   ├── mq/
+    │   │   │   └── user.go         # MQ 任务声明 + 消费处理（队列实现在 conf/server/queue.go）
     │   │   └── script/            # 数据迁移 / 修数：逻辑在 repository/migration.go，这里只放入口
     │   │       ├── seeduser/main.go              # 建表 + 默认用户张三（可重复执行）
     │   │       └── user_migration_20261110.sql   # 一次性修数脚本
@@ -117,11 +119,14 @@ demo/
     │   │   ├── api/
     │   │   │   └── user.go         # 对外 Service 接口
     │   │   ├── dto/
-    │   │   │   └── user.go         # Request / Response / Query DTO
+    │   │   │   ├── user.go         # Request / Response / Query DTO
+    │   │   │   └── userregistered.go  # 队列载荷（UserRegisteredEvent）
     │   │   ├── vo/
     │   │   │   └── user.go         # 对外视图对象（按需）
     │   │   ├── enum/
     │   │   │   └── user.go         # 对外枚举（按需）
+    │   │   ├── constant/
+    │   │   │   └── task.go         # adapter 与 application 共享的常量（队列任务名等）
     │   │   └── error.go            # 本上下文的错误码扩展
     │   │
     │   ├── application/            # 用例编排
@@ -140,7 +145,8 @@ demo/
     │   │   │   ├── weather.go      # 天气查询 HTTP 适配器（open-meteo，免密钥）
     │   │   │   ├── migration.go    # 数据迁移：建表 + 默认种子用户（幂等）
     │   │   │   ├── password.go     # bcrypt 散列（实现 application 的 PasswordHasher）
-    │   │   │   └── token.go        # JWT 签发（实现 application 的 TokenIssuer）
+    │   │   │   ├── token.go        # JWT 签发（实现 application 的 TokenIssuer）
+    │   │   │   └── queue.go        # 异步任务发布（queuex redis，实现 application 的 TaskQueue）
     │   │   ├── do/                 # 数据对象：按通用协议/分类分子包（db/cache/mq/http/mail/rpc）
     │   │   │   ├── db/
     │   │   │   │   └── user.go     # type User struct（表结构）
@@ -169,7 +175,7 @@ demo/
 |---|---|
 | `cmd/<app>/` | 进程入口：唯一的 `main()`，负责命令行参数、加载配置、汇总 Server 成 `mago.App` 并 `Run`；不放单个组件的构造 |
 | `internal/<ctx>/adapter/` | 入口适配器，按协议分子目录（`http/`、`mcp/`、`mq/`、`job/`），文件按业务对象命名 |
-| `internal/<ctx>/client/` | 跨模块契约：`api/` 接口、`dto/`、`vo/`、`enum/`、`error.go` 错误码 |
+| `internal/<ctx>/client/` | 跨模块契约：`api/` 接口、`dto/`、`vo/`、`enum/`、`constant/`（adapter 与 application 共享的常量，如队列任务名）、`error.go` 错误码 |
 | `internal/<ctx>/application/` | 用例编排、实现 `client/api` 的接口 |
 | `internal/<ctx>/domain/` | 聚合、实体、值对象、领域服务、领域错误、出站端口（单端口 `gateway.go`，多端口 `gateway/` 子包） |
 | `internal/<ctx>/infrastructure/` | `repository/` 一个 DO 一个 repository（读写都在这里）、`do/` 数据对象、`convertor/`、`util/` |
@@ -249,7 +255,8 @@ internal/
 4. `do/` 下的每个分类子包只描述该分类的结构：数据库表、缓存键值、消息体、HTTP 报文，不写业务规则。
 5. 一个业务对象需要多种介质时并列建文件，如 `do/db/user.go` 与 `do/redis/user.go`，互不引用。
 6. 同样的命名规则适用于其他层：`client/api/user.go`、`client/dto/user.go`、`application/user.go`、`domain/user.go`、`adapter/http/user.go`、`infrastructure/repository/user.go`。
-6. 所有 DTO、VO、枚举、错误码、对外接口一律放 `client/`，`application` 与 `adapter` 不得再建自己的 dto 目录。
+7. 所有 DTO、VO、枚举、错误码、对外接口一律放 `client/`，`application` 与 `adapter` 不得再建自己的 dto 目录；
+   `adapter` 与 `application` 共享的常量（队列任务名、事件名等）放 `client/constant/`，两侧都 import 它，禁止各自复制一份。
 
 ---
 
@@ -1152,6 +1159,7 @@ type UserResponse struct {
 | 查询入参 | `OrderListQuery`（`client/dto`） |
 | 对外枚举 | `OrderStatus`（`client/enum`） |
 | Domain Event | `OrderApproved`（`client/api`） |
+| 共享常量（任务名/事件名） | `TaskUserRegistered`（`client/constant`） |
 
 不需要机械地给所有类型添加 `DTO` 后缀。
 
@@ -1359,13 +1367,16 @@ cmd/
 `NewApp` 只在 `main.go` 里定义，返回 `mago.App`，签名固定为「配置 + Server engine + handler 汇总」：
 
 ```go
-func NewApp(c *config.Conf, hs *mago.Http, mqtt *emqx.MQTT, mcpSrv *server.McpServer, handler *conf.Handler) *mago.App {
+func NewApp(c *config.Conf, hs *mago.Http, mqtt *emqx.MQTT, mcpSrv *server.McpServer, queue queuex.Server, handler *conf.Handler) *mago.App {
     handler.Bind(hs, mcpSrv, c) // HTTP 路由 + MCP 协议入口挂到 engine 上
 
     servers := make([]mago.Server, 0, 2)
     servers = append(servers, hs)
     if mqtt != nil {
         servers = append(servers, mqtt)
+    }
+    if queue != nil {
+        servers = append(servers, queue)
     }
 
     return mago.New(c.AppName, servers)
@@ -1394,7 +1405,7 @@ conf/
 ├── server/
 │   ├── http.go          # NewHttpServer（server 构造 + 通用中间件，不含业务路由）
 │   ├── mcp.go           # NewMcpServer（MCP 协议引擎 + ToolRegistrar 接口）
-│   ├── queue.go         # NewQueueServer
+│   ├── queue.go         # NewQueueServer（TaskRegistrar + 注册任务）
 │   ├── mqtt.go          # NewMQTTServer
 │   └── copool.go        # NewCoPool
 └── middleware/
@@ -1418,6 +1429,7 @@ func NewCoPool(c *config.Conf, queueSrv queuex.Server, mqtt *emqx.MQTT) *copool.
 type Handler struct {
     user *userhttp.UserController
     mcp  *usermcp.UserMcp
+    mq   *usermq.UserConsumer
 }
 
 func (h *Handler) Bind(hs *mago.Http, mcpSrv *server.McpServer, c *config.Conf) {
@@ -1430,6 +1442,9 @@ func (h *Handler) Bind(hs *mago.Http, mcpSrv *server.McpServer, c *config.Conf) 
 
 // McpRegistrars 提供给 server.NewMcpServer：工具定义在 adapter，引擎在 server
 func (h *Handler) McpRegistrars() []server.ToolRegistrar
+
+// TaskRegistrars 提供给 server.NewQueueServer：任务声明在 adapter/mq，队列实现在 server
+func (h *Handler) TaskRegistrars() []server.TaskRegistrar
 ```
 
 约定：`Handler` 只持有 adapter 实例，不构造协议引擎、不启动、不写业务；新增上下文 = 加一个字段 + 在 `Bind` 里挂它的路由 + 在 `McpRegistrars` 里加上它的工具声明，`NewApp` 签名不变。MCP 协议引擎（`sdk.Server`、Streamable HTTP handler）在 `conf/server/mcp.go`，adapter 只负责 `RegisterTools`（见 7.3）。
@@ -1611,6 +1626,32 @@ queueSrv.RegisterHandleFunc("order.issuecoupon", func(ctx context.Context, t *di
 
 队列与协程池的耦合见 §11.2：`copool.NewCoPool` 依赖队列客户端，二者要成对启用。
 
+demo 的落地方式（可直接照抄）：
+
+| 关注点 | 位置 |
+|---|---|
+| 任务名 | `client/constant/task.go` 的 `TaskUserRegistered`（adapter 与 application 共享的常量） |
+| 发布端口 | `application.TaskQueue`（消费方定义） |
+| 载荷契约 | `client/dto/userregistered.go` 的 `UserRegisteredEvent`（生产与消费共用） |
+| 发布 | 用例里 `s.tasks.Enqueue(...)`；实现在 `infrastructure/repository/queue.go`（`conf.Queue.GetClient()`） |
+| 消费 | `adapter/mq/user.go` 的 `UserConsumer.RegisterTasks` + `handleUserRegistered` |
+| 装配 | `conf/server/queue.go` 的 `NewQueueServer(c, handler.TaskRegistrars()...)`，`main` 里与 HTTP / MQTT / MCP 并列造 engine |
+| 配置 | `conf.yml` 的 `queue.default: redis` + `queue.redis.dsn` |
+
+本地起一个 Redis（podman）：`podman run -d --name mago-redis -p 6379:6379 redis:7-alpine`。
+验证：启动服务后 `POST /api/v1/user/users` 注册，日志出现 `[queue] 已消费 user_registered: ...`。
+Redis 不可用时注册仍成功（发布失败只 `logx.GroupWarnf` 降级）；需要强一致就上 Outbox。
+
+真库联调（凭据在仓库根 `runtime/db.txt` 的 `REDIS_URI`；asynq 要求 Redis ≥ 4.0，实测账上共享实例是 3.2.12，跑不了）：
+
+```bash
+cd demo/internal/user/infrastructure/repository
+go test -tags queuelive -run TestQueueLive -v -timeout 2m        # 用 db.txt 里的 REDIS_URI
+MAGO_LIVE_REDIS_URI=redis://127.0.0.1:6379/0 go test -tags queuelive -run TestQueueLive -v -timeout 2m
+```
+
+用例会走 `repository.Queue` 发布 + 真实 worker 消费，断言任务载荷往返；Redis 版本过低时按 SKIP 处理并给出提示。
+
 ### 12.4 时间字段：统一用 mago.DateTime
 
 库内时间列与 JSON 输出共用 `mago.DateTime`（`datetime.go`），不要在 DO / DTO / VO 里自己拼 `time.Time` + 格式化字符串。
@@ -1623,6 +1664,7 @@ queueSrv.RegisterHandleFunc("order.issuecoupon", func(ctx context.Context, t *di
 | 零值语义 | `Value()` 零值返回 nil → 列写 NULL；`Scan(nil)` 回到零值；JSON 输出 `null` |
 | 精度 | 写入前截断到秒（`Truncate(time.Second)`），`config` 打开库时 `NowFunc` 也截断到秒——否则 MySQL 会对小数秒四舍五入，内存值与库值差 1 秒 |
 | 字段命名陷阱 | 字段叫 `CreatedAt` / `UpdatedAt` 时 GORM 会按名自动填充；不想自动填充就换名字（如 `PublishedAt`） |
+| JSON 序列化 | `MarshalJSON` 必须用**值接收者**：`json.Marshal` 对非指针字段不会取地址，指针接收者的方法看不到，会退化成 time.Time 的 RFC3339（带纳秒），消费端按秒格式解析就会失败 |
 
 真库联调（凭据在仓库根 `runtime/db.txt`，KEY=VALUE；用例只建 `mago_live_` 前缀临时表并在结束 DROP）：
 
