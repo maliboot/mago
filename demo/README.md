@@ -21,12 +21,12 @@
 2. 入口适配器统一放 `adapter/`，出站实现统一放 `infrastructure/`，两类适配器不混放。
 3. 代码按层组织，一层一个 Go Package：`adapter`、`application`、`domain`、`infrastructure`。
 4. 业务模块按限界上下文隔离，每个上下文内部重复相同的四层包结构。
-5. `cmd/` 只放启动入口与依赖装配，是唯一允许同时引用四层的地方。
+5. `cmd/` 只放进程入口（命令行参数、加载配置、汇总 `mago.App` 并 `Run`），组件装配与路由注册放 `conf/`；两者同属组合根，是唯一允许同时引用四层的地方（见第 11 章）。
 6. `adapter` 只做协议转换与参数校验，调用 `application` 暴露的服务接口。
 7. `application` 编排用例，依赖 `domain` 的聚合、领域服务与 Gateway 接口。
 8. `domain` 定义聚合、值对象、领域服务、领域错误和出站端口（Gateway 接口），不依赖任何外层。
 9. `infrastructure` 实现 `domain` 定义的 Gateway，承载数据库、缓存、消息队列、外部 API 等技术细节。
-10. 依赖方向单向向内：`adapter → application → domain ← infrastructure`；不引入 DI 框架，统一由启动入口手动装配。
+10. 依赖方向单向向内：`adapter → application → domain ← infrastructure`；不引入 DI 框架，统一由 `cmd/` 与 `conf/` 手动装配，`internal/` 各层不得反向依赖装配层。
 
 分层约束靠两条腿落地：Package 边界与架构测试（见 17.1）。
 
@@ -62,7 +62,9 @@
             |  DB / Redis / MQ / 外部 API 客户端      |
             +---------------------------------------+
 
-            cmd/ 为组合根：构造四层实现并注入，不写业务逻辑。
+            cmd/ + conf/ 为组合根：cmd/ 管进程生命周期（参数、配置、
+            启动、退出），conf/ 构造 Server 与四层实现并注入；
+            两者都不写业务逻辑（见第 11 章）。
 ```
 
 上图表达的是依赖方向，不要求每个限界上下文都创建完全相同的目录。
@@ -83,11 +85,22 @@ demo/
 │
 ├── cmd/
 │   └── server/
-│       ├── main.go          # 启动入口：读配置、装配四层、启动应用
-│       ├── http.go          # HTTP Server 装配
-│       ├── queue.go         # 队列装配（按需）
-│       ├── mqtt.go          # MQTT 装配（按需）
-│       └── copool.go        # 协程池装配（按需）
+│       └── main.go          # 唯一进程入口：flag、配置、NewApp、Run
+│
+├── conf/                    # 组合根实现：只装配，不写业务
+│   ├── wire.go              # 依赖图：//go:build wireinject + wire.Build
+│   ├── wire_gen.go          # wire 生成的装配代码（入库，禁手改）
+│   ├── provider.go          # 桥接 provider：子配置切片、端口绑定
+│   ├── handler.go           # Handler：汇总 adapter 入口 + Bind(engine) 挂路由
+│   ├── conf.go              # 业务自定义配置 Conf + New（同一份 conf.yml 解码）
+│   ├── server/
+│   │   ├── http.go          # NewHttpServer（server 构造 + 通用中间件）
+│   │   ├── mcp.go           # NewMcpServer（MCP 协议引擎）+ ToolRegistrar 接口
+│   │   ├── queue.go         # NewQueueServer
+│   │   ├── mqtt.go          # NewMQTTServer
+│   │   └── copool.go        # NewCoPool
+│   └── middleware/
+│       └── print.go         # 自定义 hertz 中间件
 │
 └── internal/
     ├── user/                       # 限界上下文：用户
@@ -95,7 +108,7 @@ demo/
     │   │   ├── http/
     │   │   │   └── user.go         # HTTP Controller
     │   │   ├── mcp/
-    │   │   │   └── user.go         # MCP 工具注册（官方 go-sdk）
+    │   │   │   └── user.go         # MCP 工具声明（协议引擎在 conf/server/mcp.go）
     │   │   └── script/            # 数据迁移 / 修数：逻辑在 repository/migration.go，这里只放入口
     │   │       ├── seeduser/main.go              # 建表 + 默认用户张三（可重复执行）
     │   │       └── user_migration_20261110.sql   # 一次性修数脚本
@@ -154,13 +167,14 @@ demo/
 
 | 目录 | 职责 |
 |---|---|
-| `cmd/` | 启动入口与依赖装配（组合根） |
+| `cmd/<app>/` | 进程入口：唯一的 `main()`，负责命令行参数、加载配置、汇总 Server 成 `mago.App` 并 `Run`；不放单个组件的构造 |
 | `internal/<ctx>/adapter/` | 入口适配器，按协议分子目录（`http/`、`mcp/`、`mq/`、`job/`），文件按业务对象命名 |
 | `internal/<ctx>/client/` | 跨模块契约：`api/` 接口、`dto/`、`vo/`、`enum/`、`error.go` 错误码 |
 | `internal/<ctx>/application/` | 用例编排、实现 `client/api` 的接口 |
 | `internal/<ctx>/domain/` | 聚合、实体、值对象、领域服务、领域错误、出站端口（单端口 `gateway.go`，多端口 `gateway/` 子包） |
 | `internal/<ctx>/infrastructure/` | `repository/` 一个 DO 一个 repository（读写都在这里）、`do/` 数据对象、`convertor/`、`util/` |
 | `internal/<ctx>/adapter/script/` | 数据迁移与修数入口：可重复的逻辑写 `infrastructure/repository/migration.go`，脚本只做装配与触发（如 `seeduser/main.go`）；一次性修数用 `上下文_说明_日期.sql` |
+| `conf/` | 组合根实现（只装配，不写业务）：`wire.go` 依赖图、`provider.go` 桥接 provider、`wire_gen.go` 生成物、`handler.go` adapter 入口汇总 + `Bind` 挂路由、`server/` 一 Server 一文件、`middleware/` 自定义中间件、`conf.go` 业务自定义配置 |
 | `conf.yml` | 运行配置 |
 | `README.md` | 架构规范，唯一文档入口（不另建 docs/ 目录） |
 | `llms.txt` | AI Agent 速查索引，指向 README.md 对应章节（第 18 章为完整约束） |
@@ -206,6 +220,8 @@ internal/
 4. 不建根目录 `docs/`：架构规范就是根目录 `README.md`，ADR 直接写进正文对应章节。
 5. 不建根目录 `migrations/`：数据迁移与修数一律做成 `adapter/script/` 下的入口，随上下文走，可回放、可评审；
    可重复执行的迁移逻辑（建表、种子数据）写在 `infrastructure/repository/migration.go`，脚本只负责装配与触发（示例 `seeduser`）。
+6. 顶层 `conf/` 只装装配代码：`wire.go`（依赖图）、`provider.go`（桥接 provider）、`handler.go`（adapter 入口汇总 + `Bind` 挂路由）、`server/`（Server 构造）、`middleware/`（协议中间件）、`conf.go`（业务自定义配置）。
+   它不属于第 16.5 节禁止的技术分类目录——包里没有业务对象，只有构造函数；一旦出现业务判断或业务对象，即按第 17 章反依赖处理。
 
 ### 2.4 infrastructure 分层与文件命名
 
@@ -765,23 +781,33 @@ infrastructure/
 
 infrastructure 可以依赖技术框架，但不能反向要求 domain 依赖这些技术。
 
-### 7.3 MCP 入口：adapter/mcp/
+### 7.3 MCP 入口：adapter/mcp/ 声明工具，conf/server 提供引擎
 
-MCP 入口把同一批用例暴露成工具供模型调用，只做参数映射与错误透出：复用 `client/dto`、`client/vo` 与同一套 application 逻辑，不定义自己的 DTO，也不实现协议。
+MCP 分成两半，各自只做自己的事：
+
+| 关注点 | 放在哪 | 内容 |
+|---|---|---|
+| 协议引擎 | `conf/server/mcp.go` | `sdk.NewServer`、Streamable HTTP handler、`/mcp` 挂载、引擎元信息（取 `app_name`） |
+| 工具声明 | `internal/<ctx>/adapter/mcp/` | 工具名、描述、入参出参类型、调用哪个 application 方法 |
+
+adapter/mcp 只实现 `server.ToolRegistrar`（`RegisterTools(srv *sdk.Server)`），不建引擎、不提供 handler、不管传输；引擎由组合根构造，把各上下文的 registrar 装进去。
 
 协议实现用官方 SDK：`github.com/modelcontextprotocol/go-sdk`（官方 Go SDK，由 MCP 官方与 Google Go 团队共同维护）。不自己写 JSON-RPC 层，也不手写 tool schema。
 
 ```text
-adapter/mcp/
-└── user.go     # 工具注册 + handler
+conf/server/mcp.go        # McpServer：NewMcpServer(c, registrars...) + Handler/Server
+internal/<ctx>/adapter/mcp/
+└── user.go               # 工具声明 + handler（RegisterTools）
 ```
 
 ```go
-// 注册：入参直接是 client/dto 的 UserAuthRequest，schema 由 SDK 依类型自动推导
-sdk.AddTool(m.server, &sdk.Tool{
-    Name:        ToolLogin,
-    Description: "用邮箱和密码登录，返回访问令牌。",
-}, m.login)
+// adapter/mcp：只声明工具，入参直接是 client/dto 的 UserAuthRequest，schema 由 SDK 依类型自动推导
+func (m *UserMcp) RegisterTools(srv *sdk.Server) {
+    sdk.AddTool(srv, &sdk.Tool{
+        Name:        ToolLogin,
+        Description: "用邮箱和密码登录，返回访问令牌。",
+    }, m.login)
+}
 
 // handler：入参复用 dto，出参复用 vo，业务错误直接返回 error（SDK 转成 isError）
 func (m *UserMcp) login(ctx context.Context, _ *sdk.CallToolRequest, in dto.UserAuthRequest) (*sdk.CallToolResult, *vo.UserTokenVO, error) {
@@ -794,16 +820,32 @@ func (m *UserMcp) login(ctx context.Context, _ *sdk.CallToolRequest, in dto.User
 }
 ```
 
+```go
+// conf/server/mcp.go：引擎只装配与传输，不写工具定义
+func NewMcpServer(c *config.Conf, registrars ...ToolRegistrar) *McpServer {
+    srv := sdk.NewServer(&sdk.Implementation{Name: c.AppName + "-mcp", Version: serverVersion}, nil)
+    for _, registrar := range registrars {
+        registrar.RegisterTools(srv)
+    }
+
+    return &McpServer{
+        srv:     srv,
+        handler: sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return srv }, nil),
+    }
+}
+```
+
 传输与挂载：
 
-1. 传输用 Streamable HTTP：`sdk.NewStreamableHTTPHandler(...)` 返回标准 `http.Handler`。
-2. 挂载复用现有 hertz 服务，不新开端口：`h.Any("/mcp", adaptor.HertzHandler(handler))`，`adaptor` 是 hertz 官方 `pkg/common/adaptor`。
+1. 传输用 Streamable HTTP：`sdk.NewStreamableHTTPHandler(...)` 返回标准 `http.Handler`，在 `conf/server/mcp.go` 里封装成 `McpServer.Handler()`。
+2. 挂载复用现有 hertz 服务，不新开端口：`conf.Handler.Bind` 里 `hs.Any("/mcp", adaptor.HertzHandler(mcpSrv.Handler()))`，`adaptor` 是 hertz 官方 `pkg/common/adaptor`。
    MCP 是协议入口，不套资源路由，用独立路径 `/mcp`；对外 REST 走 §7.5 的 `/api/v1/<模块前缀>/...`。
 3. 工具名用 `上下文_动作`（`user_login`、`user_register`、`user_me`），避免多上下文冲突。
 4. 入参复用 `client/dto.UserAuthRequest`，出参复用 `client/vo.UserTokenVO`、`vo.UserVO`，MCP 适配器不定义任何 DTO/VO。
 5. 工具最终落到 `application.UserService`，与 HTTP 入口共用同一份用例实现。
 6. 工具 schema 由 DTO 的 `json` / `jsonschema` 标签推导：字段默认可选，必填语义写进字段描述，由业务层校验兜底。
-7. 测试用 SDK 自带的内存传输（`sdk.NewInMemoryTransports` + `Client.Connect`）或 `httptest` + Streamable HTTP 客户端，不依赖数据库。
+7. 测试用 SDK 自带的内存传输（`sdk.NewInMemoryTransports` + `Client.Connect`）或 `httptest` + Streamable HTTP 客户端；引擎在测试内自建，不让 adapter 测试反向依赖 `conf/`（§17）。
+8. 新增上下文 = 在 `adapter/mcp` 实现 `RegisterTools` + 在 `conf/handler.go` 的 `McpRegistrars()` 返回里加上它；引擎代码零改动。
 
 ### 7.4 外部服务与本机资源接入
 
@@ -1287,20 +1329,133 @@ type OrderApproved struct {
 
 ## 11. 启动装配与依赖注入
 
-`cmd/` 是应用的组合根（Composition Root）。
+组合根（Composition Root）由两个顶层目录共同承担，职责一次划清：
 
-负责：
+| 目录 | 管什么 | 不该出现的 |
+|---|---|---|
+| `cmd/<app>/` | 进程生命周期 + 汇总：命令行参数、加载配置、造 Server engine、取 wire 装配的 handler 图、`NewApp` 返回 `mago.App` 并 `Run()` | adapter 内实例（`*UserController` / `*UserMcp` …）作形参；把对象图铺开 |
+| `conf/` | 依赖装配：wire 依赖图（`wire.go` / `provider.go` / `wire_gen.go`）、adapter 入口汇总（`handler.go`）、Server 构造、协议中间件、业务自定义配置 | 任何业务规则、业务状态、跨请求数据 |
 
-- 读取并校验配置。
-- 初始化数据库、缓存、Logger、消息队列。
-- 构造 infrastructure 实现。
-- 构造 application Service 并注入 Gateway。
-- 构造 adapter Controller 并注册路由。
-- 启动 HTTP Server、MQTT、队列等 server。
+两者都允许 import 四层（见第 17 章），都只做装配。判断代码该放哪的问法是：**「决定进程怎么活」进 `cmd/`，「决定对象怎么造」进 `conf/`**。
 
-### 11.1 手动依赖注入
+### 11.1 cmd/ 只放进程入口
 
-默认采用构造函数注入。
+一个可执行程序一个目录、一个 `main`：`cmd/<app>/main.go`，`package main`。
+
+```text
+cmd/
+└── server/
+    └── main.go      # 唯一入口
+```
+
+`main.go` 固定五个动作，不掺别的：
+
+1. `init()` 声明启动参数：`flag.StringVar(&flagConf, "f", "./conf.yml", "config path, eg: -f conf.yml")`；配置路径一律可覆盖，不写死在代码里。
+2. `main()` 首行挂 panic 兜底：`defer helper.PanicRecover("项目初始化")`。
+3. 加载框架配置：`config.NewConf(config.WithConfFile(flagConf))` → `c.Bootstrap(false)`；失败直接 `panic`，进程不带病运行。`Bootstrap` 负责解码 `conf.yml`、初始化 logger、补齐 queue / scheduler 默认值。
+4. 取 wire 装配的 handler 图：`conf.InitHandler(c)`；失败直接 `hlog.Fatalf`。
+5. 造 Server engine：`server.NewHttpServer(c)`、`server.NewMQTTServer(c)`、`server.NewMcpServer(c, handler.McpRegistrars()...)`（MCP 引擎把各上下文的工具声明装进去）→ 挂 OS runtime 监控 → `NewApp(...).Run()`；错误里 `terminated` 属正常停机，直接 `return`，其余 `hlog.Fatal`。
+
+`NewApp` 只在 `main.go` 里定义，返回 `mago.App`，签名固定为「配置 + Server engine + handler 汇总」：
+
+```go
+func NewApp(c *config.Conf, hs *mago.Http, mqtt *emqx.MQTT, mcpSrv *server.McpServer, handler *conf.Handler) *mago.App {
+    handler.Bind(hs, mcpSrv, c) // HTTP 路由 + MCP 协议入口挂到 engine 上
+
+    servers := make([]mago.Server, 0, 2)
+    servers = append(servers, hs)
+    if mqtt != nil {
+        servers = append(servers, mqtt)
+    }
+
+    return mago.New(c.AppName, servers)
+}
+```
+
+约定：
+
+1. **`NewApp` 的形参里禁止出现 adapter 内实例**（`*UserController`、`*UserMcp` 之类）：所有 adapter 入口由 wire 装配进 `conf.Handler`，`NewApp` 只接收这个汇总类型并调它的 `Bind`。新增上下文时 `NewApp` 签名不变。
+2. `NewApp` 只做「绑定 + 汇总 + 返回 `mago.App`」，不构造 Repository / Service / Controller；Server engine 由 `main` 从 `conf/server` 造好传进来。
+3. 可选 Server 的「不启用」用 nil 表达：`NewApp` 只把非 nil 的 Server 交给 `mago.App`（`mago.App.Run` 也会跳过 nil）。
+4. 配置只在这里加载一次：`conf/` 与业务代码都不再读 `conf.yml`，需要配置就通过 provider 注入。
+5. 进程级监控 / 自省在 `main` 里挂一次（`autoloadx.NewOSRuntime(...).Monitor()`），失败即 fatal；退出码只由 `main` 决定。
+
+### 11.2 conf/ 是装配层的实现包
+
+`cmd/` 决定「起哪些组件」，`conf/` 决定「怎么把它们造出来」。
+
+```text
+conf/
+├── wire.go              # //go:build wireinject：依赖图与 InitHandler 入口
+├── wire_gen.go          # wire 生成的装配代码（入库，禁手改）
+├── provider.go          # 桥接 provider：子配置切片、端口绑定
+├── handler.go           # Handler：汇总 adapter 入口 + Bind(engine) 挂路由
+├── conf.go              # 业务自定义配置：Conf + New
+├── server/
+│   ├── http.go          # NewHttpServer（server 构造 + 通用中间件，不含业务路由）
+│   ├── mcp.go           # NewMcpServer（MCP 协议引擎 + ToolRegistrar 接口）
+│   ├── queue.go         # NewQueueServer
+│   ├── mqtt.go          # NewMQTTServer
+│   └── copool.go        # NewCoPool
+└── middleware/
+    └── print.go         # 自定义 hertz 中间件 Print()
+```
+
+1. **一 Server 一文件**，函数名 `NewXxxServer`（不是 Server 的组件按组件名，如 `NewCoPool`）：入参统一 `*config.Conf`（需要协作组件时往后排），返回框架 server 类型，函数体只有「读配置 → 调框架构造函数 → 返回」，不写业务判断、不挂业务路由；可选组件在函数内返回 nil 表示不启用：
+
+```go
+func NewHttpServer(c *config.Conf) *mago.Http
+func NewQueueServer(c *config.Conf) queuex.Server   // 未配置 → nil
+func NewMQTTServer(c *config.Conf) *emqx.MQTT       // mqtt.enable=false → nil
+func NewCoPool(c *config.Conf, queueSrv queuex.Server, mqtt *emqx.MQTT) *copool.CoPool
+```
+
+注意队列与协程池的耦合：`NewQueueServer` 会真正初始化队列客户端，而 `copool.NewCoPool` 内部依赖该客户端，二者只能成对启用。
+
+2. **adapter 入口汇总在 `conf/handler.go` 的 `Handler`**：一个结构体收下本进程所有 HTTP controller 与 MCP 工具声明（由 wire 装配），并提供 `Bind` 接收 server engine 完成挂载。`Bind` 里只做分组与挂载，禁止出现 `NewXxx`：
+
+```go
+type Handler struct {
+    user *userhttp.UserController
+    mcp  *usermcp.UserMcp
+}
+
+func (h *Handler) Bind(hs *mago.Http, mcpSrv *server.McpServer, c *config.Conf) {
+    v1 := hs.Group("/api/v1/user")
+    authed := v1.Group("", c.Server.Http.JWT["frontend"].MiddlewareFunc())
+
+    h.user.Router(v1, authed)
+    hs.Any("/mcp", adaptor.HertzHandler(mcpSrv.Handler()))
+}
+
+// McpRegistrars 提供给 server.NewMcpServer：工具定义在 adapter，引擎在 server
+func (h *Handler) McpRegistrars() []server.ToolRegistrar
+```
+
+约定：`Handler` 只持有 adapter 实例，不构造协议引擎、不启动、不写业务；新增上下文 = 加一个字段 + 在 `Bind` 里挂它的路由 + 在 `McpRegistrars` 里加上它的工具声明，`NewApp` 签名不变。MCP 协议引擎（`sdk.Server`、Streamable HTTP handler）在 `conf/server/mcp.go`，adapter 只负责 `RegisterTools`（见 7.3）。
+
+3. **自定义中间件放 `conf/middleware/`**：一中间件一文件，形状固定 `func Xxx() app.HandlerFunc`，内部只处理横切关注点后 `ctx.Next(c)`；不读业务数据、不写业务规则（业务校验留在 adapter，见 7.1）。通用中间件（access log、request id、recovery、静态目录、探活）挂在 `NewHttpServer` 里。
+
+4. **业务自定义配置放 `conf/conf.go`**：不改框架 `config.Conf`，也不另开配置文件；自己的结构体带 `yaml` 标签，从同一份 `conf.yml` 解码，构造函数返回错误而不是静默给空结构：
+
+```go
+type Conf struct {
+    Administrator struct {
+        Email    string `yaml:"email"`
+        Password string `yaml:"password"`
+    } `yaml:"administrator"`
+}
+
+func New(c *config.Conf) (*Conf, error)
+```
+
+没有消费方的配置段不要硬塞进依赖图（wire 会报 unused provider）；有使用方时补一个 provider 注入即可（见 11.5）。
+
+5. `conf/` 里**不出现三类东西**：业务判断（`if 用户已停用`）、业务对象（Entity / DO / VO / DTO）、跨请求状态（全局 map 缓存业务数据）。出现即说明该段逻辑本应落在四层里。
+
+### 11.3 构造函数注入
+
+依赖一律通过构造函数注入；wire 只负责把这些构造函数按类型串起来，不改变注入方式，也不做反射。
 
 ```go
 func NewOrderService(orders order.Gateway) OrderService {
@@ -1308,38 +1463,91 @@ func NewOrderService(orders order.Gateway) OrderService {
 }
 ```
 
-装配顺序固定为自内向外：
+装配顺序固定为自内向外（`conf/wire_gen.go` 生成的代码就是按这个顺序执行的）：
 
 ```text
-config → DB / Redis / MQ
-       → infrastructure（实现 Gateway）
-       → application（注入 Gateway）
-       → adapter（注入 Service）
-       → 注册路由并启动
+config（cmd 加载一次）→ logger / queue / scheduler（Bootstrap 内完成）
+       → infrastructure（实现 Gateway 与外部端口）
+       → application（注入 Gateway 与端口）
+       → adapter Controller / MCP handler（注入 Service）
+       → conf.InitHandler 收成 conf.Handler（wire 生成的终点）
+       → server.NewXxxServer 造 Server engine（cmd 里）
+       → Handler.Bind 把入口挂到 engine 上
+       → main.NewApp 汇总 []mago.Server → mago.App.Run
 ```
 
-示例：
+### 11.4 DI 规则
+
+1. 依赖注入一律走构造函数，不使用全局 Service Locator。
+2. 不在业务代码中随意创建数据库连接。
+3. 不在 Controller 中初始化 Repository。
+4. 不把依赖装配逻辑放入 domain。
+5. 装配只发生在组合根：`cmd/` 与 `conf/` 可以 import 任意层，`internal/` 任意层不得 import `conf/`（见第 17 章）。
+6. 不用反射式 DI 容器（`fx`、`dig`、`samber/do` 这类）：类型错误要等到运行时才暴露，且装配关系被藏进标签。`wire` 是编译期代码生成、生成的是可读的普通 Go 装配代码，属于本规范的推荐做法（见 11.5）。
+7. 同一组依赖只装配一次：HTTP 与 MCP 入口共用同一个 Service 实例，wire 对同类型只构造一次。
+8. 组件是否启用由 provider 返回 nil 表达（或由 `cmd` 传 nil），不在 `conf/` 里读 `app_env` 写开关分支；环境差异写进配置值，不写进装配逻辑。
+9. 可选组件要成组启用：队列与协程池耦合（`copool` 依赖队列客户端），不要把其中一个单独放进依赖图。
+
+### 11.5 wire 装配
+
+`conf/` 里的四个文件各管一件事，改装配只改前三个，`wire_gen.go` 永远不手改：
+
+| 文件 | 职责 | 构建标签 |
+|---|---|---|
+| `conf/wire.go` | 依赖图：`InitHandler(c *config.Conf) (*Handler, error)` 里用 `wire.Build(...)` 列出 provider | `//go:build wireinject`（不进产物） |
+| `conf/provider.go` | 桥接 provider：子配置切片、端口绑定（concrete → interface） | 无 |
+| `conf/handler.go` | `Handler`（wire 通过 `wire.Struct` 填充）+ `Bind(engine)` 挂路由 | 无 |
+| `conf/wire_gen.go` | wire 生成的装配函数 | `//go:build !wireinject`（生成物，入库） |
+
+Server（`*mago.Http`、`*emqx.MQTT`、`*server.McpServer` 等）不进依赖图：它们只依赖配置（MCP 引擎另外拿 `Handler.McpRegistrars()` 的工具清单），彼此不成图，由 `cmd` 直接构造后传给 `NewApp`。依赖图只负责「层次多、易漏」的那一段：配置 → repository → application → controller/MCP 工具声明。
+
+依赖图写法（`conf/wire.go`，节选）：
 
 ```go
-func NewApp(c *config.Conf) *mago.App {
-    repo := infrastructure.NewOrderRepository(db)
-    svc := application.NewOrderService(repo)
-    ctrl := adapter.NewUserController(svc)
+func InitHandler(c *config.Conf) (*Handler, error) {
+    wire.Build(
+        provideSMTPConf,        // 子配置切片：只给 *config.SMTP
+        repository.NewUser,     // infrastructure
+        provideUserGateway,     // *repository.User → domain.UserGateway
+        provideUserQuery,       // 同一个 *repository.User → application.UserQuery
+        repository.NewPassword,
+        repository.NewToken,
+        repository.NewSMTP,
+        providePasswordHasher,  // concrete → application.PasswordHasher
+        provideTokenIssuer,
+        provideCodeSender,
+        application.NewUserService,
+        userhttp.NewUserController, // adapter：HTTP 与 MCP 共用同一个 Service
+        usermcp.NewUserMcp,
+        wire.Struct(new(Handler), "*"), // 组合根产物：只装 adapter 入口
+    )
 
-    hs := NewHttpServer(c, ctrl)
-    return mago.New(c.AppName, []mago.Server{hs})
+    return nil, nil
 }
 ```
 
-### 11.2 DI 规则
+规则：
 
-1. 默认使用手动依赖注入。
-2. 不使用全局 Service Locator。
-3. 不在业务代码中随意创建数据库连接。
-4. 不在 Controller 中初始化 Repository。
-5. 不把依赖装配逻辑放入 domain。
-6. 不因为模块增多就立即引入反射式 DI 框架，`wire` 之类按需评估。
-7. 只有当手动装配的复杂度已经明显影响维护时，才评估 DI 工具。
+1. **注入器只能有一个返回值**（可再跟一个 `error`）：`wire` 不支持多返回值注入器（会报 `second return type ... must be func()`），所以「Server 集合 + handler 集合」不能塞进同一个 injector —— 需要多值时改成多个 injector 或让 `cmd` 自己汇总。
+2. **一个类型一个 provider**：wire 按类型匹配，同一类型出现两个 provider 会直接生成失败（报错会指出两个 provider 的 file:line），这是它比手写装配更早暴露问题的地方。
+3. **concrete → interface 必须显式桥接**：wire 不会自动把 `*repository.Password` 当成 `application.PasswordHasher`，桥接函数写在 `provider.go`，一行一个，不许在桥接函数里写逻辑。
+4. **同一实例绑多个端口**：一个 DO 一个 repository，写端口与读端口各用一个桥接函数指向同一个 `*repository.User`，wire 只构造一次，天然满足「读写同一个实例」。
+5. **子配置用切片 provider**：`func provideSMTPConf(c *config.Conf) *config.SMTP`，让适配器只拿到自己那段配置，不要到处传 `*config.Conf`。
+6. **provider 不放 `wire.go`**：wireinject 文件里的普通声明会被复制进 `wire_gen.go`，让生成物变脏；`wire.go` 只留 `InitHandler` 与 `wire.Build`。
+7. **组合根产物用 `wire.Struct` 填充**：`Handler` 的字段可以是同包未导出字段（wire 生成的代码在同包内），新增上下文只加字段 + 改 `Bind`。
+8. **可选组件返回 nil**：`NewMQTTServer` 在 `mqtt.enable=false` 时返回 nil，`NewApp` 汇总时跳过 nil；不要为了 wire 引入 NoopServer。
+9. **没有消费方的 provider 不要放**：wire 会报 `unused provider`；反过来，缺 provider 会报 `no provider found for X` 并打印完整的依赖链。
+10. **生成命令与提交**：改完 provider 后执行
+
+```bash
+cd demo
+go tool wire ./conf        # 重新生成 conf/wire_gen.go（工具依赖在 go.mod 的 tool 指令里）
+gofmt -l . && go build ./... && go vet ./... && go test -count=1 ./...
+git diff --exit-code conf/wire_gen.go   # 提交前确认生成物与源码一致
+```
+
+11. **生成物入库、禁手改**：`wire_gen.go` 是编译产物的一部分（缺了会 `undefined: InitHandler`），因此必须提交；`§16.7` 的文件命名规则给它唯一豁免（工具不接受改名）。
+12. **测试不经过 wire**：单测、集成测试继续直接调构造函数（`repository.NewUser(conf)`），装配错误由 `go tool wire` 与编译期兜底，不在运行时验证。
 
 ---
 
@@ -1372,6 +1580,56 @@ func NewApp(c *config.Conf) *mago.App {
 - 各业务模块的 DTO。
 - 各业务模块专用 Gateway 实现。
 - 业务状态枚举。
+
+### 12.3 定时任务与消息队列
+
+两条默认选型先按默认走，只有不满足前提时才升级：
+
+1. **定时任务优先 `helper.Cron`**：对分布式部署的每个副本都没有副作用的任务（各副本各跑一遍也不会重复产生业务结果），一律用 `helper.Cron(ctx, cronName, interval, task)`（文件是 `helper/corn.go`，历史拼写，勿改名）。它是进程内 ticker：随进程启停、自带 panic 兜底、返回 jobId（任务名的 md5）便于日志定位。典型适用：缓存预热、指标/统计汇总、过期数据清理（`DELETE ... WHERE expired_at < now()` 这类天然幂等）、健康巡检。
+2. **有副作用的定时任务不能用 `helper.Cron` 兜**：发券、扣款、发通知、生成流水号这类「只能执行一次」的任务，多副本会各跑一遍。这类任务要么入队（用 `dispatcher.TaskID` 去重），要么在任务内加分布式锁/选主，并在入口注释里写清「为什么不会重复执行」。
+3. **消息队列优先用 mago 的 Redis 队列**：需要异步解耦、重试、延迟、分组聚合时用 `queuex`，实现优先 `queuex/redisq`（基于 asynq）：配置 `queue.default: redis` + `queue.redis.dsn`，装配走 `conf/server/queue.go` 的 `c.Queue.MustGetServer()` / `MustGetClient()`，业务只依赖 `queuex.Server` / `queuex.Client` 与 `dispatcher.Task`。
+4. **本机 sqlite 队列（`queuex/dbq`）只用于单实例 / 本地开发**：数据落在本机磁盘，多副本之间既不共享也不会自动负载均衡，不能作为分布式部署的默认。示例 `conf.yml` 用 sqlite 是为了本地零依赖跑通，生产按第 3 条切 redis。
+5. **不要绕过 `queuex` 直接引第三方队列**：在业务代码里直接 import `asynq`、`kafka-go`、`nsq` 属于跳过 §16.6 的选型；需要新后端就在 `queuex/` 下加实现，业务与装配只认 `queuex` 的接口。
+
+写法示例（按需启用，demo 默认不启动队列）：
+
+```go
+// 定时任务：多副本重复执行无副作用 → helper.Cron（进程内 ticker，随 ctx 退出）
+helper.Cron(ctx, "order.expiredclean", 10*time.Minute, func(ctx context.Context) {
+    _ = orderCleaner.Expired(ctx)
+})
+
+// 有副作用的任务 → 入队，交给队列 worker 执行；跨副本只消费一次，TaskID 用于去重
+task := dispatcher.NewTask("order.issuecoupon", nil, payload, dispatcher.TaskID(orderNo))
+_, err := queueClient.EnqueueContext(ctx, task)
+
+// worker 侧注册处理器（在 conf/server/queue.go 装配队列 Server 时）
+queueSrv.RegisterHandleFunc("order.issuecoupon", func(ctx context.Context, t *dispatcher.Task) error {
+    return issueCoupon(ctx, t.Payload)
+})
+```
+
+队列与协程池的耦合见 §11.2：`copool.NewCoPool` 依赖队列客户端，二者要成对启用。
+
+### 12.4 时间字段：统一用 mago.DateTime
+
+库内时间列与 JSON 输出共用 `mago.DateTime`（`datetime.go`），不要在 DO / DTO / VO 里自己拼 `time.Time` + 格式化字符串。
+
+| 行为 | 说明 |
+|---|---|
+| GORM ≥ 1.31 | 只认标准 `driver.Valuer` / `sql.Scanner`（旧的 `schema.ValuerInterface`、`schema.ScannerInterface` 已删除）；`DateTime` 已实现二者 + `GormDataType()` / `GormDBDataType()` |
+| `GormDataType()` 必须是 `"time"` | GORM 用这个值判断 `autoCreateTime` / `autoUpdateTime` 该写时间还是 unix 秒；返回 `"datetime"` 会写整数进时间列，MySQL 报 `Error 1292 Incorrect datetime value` |
+| 真实列类型 | 由 `GormDBDataType()` 控制：mysql `datetime`、postgres `timestamptz`、sqlserver `datetime2`、sqlite `datetime` |
+| 零值语义 | `Value()` 零值返回 nil → 列写 NULL；`Scan(nil)` 回到零值；JSON 输出 `null` |
+| 精度 | 写入前截断到秒（`Truncate(time.Second)`），`config` 打开库时 `NowFunc` 也截断到秒——否则 MySQL 会对小数秒四舍五入，内存值与库值差 1 秒 |
+| 字段命名陷阱 | 字段叫 `CreatedAt` / `UpdatedAt` 时 GORM 会按名自动填充；不想自动填充就换名字（如 `PublishedAt`） |
+
+真库联调（凭据在仓库根 `runtime/db.txt`，KEY=VALUE；用例只建 `mago_live_` 前缀临时表并在结束 DROP）：
+
+```bash
+go test -tags dblive -run TestDateTimeLive -v -timeout 5m .   # 列类型 / 零值 NULL / 往返 / 自动时间
+go test -tags dblive -run TestTxLive -v -timeout 5m .         # 提交 / 回滚 / 跨仓储共享 / 非事务回退
+```
 
 ---
 
@@ -1497,8 +1755,56 @@ Service.ApproveOrder
 5. 不要让 HTTP Handler 自己控制业务事务。
 6. 外部 HTTP 调用和消息发送不能简单地认为可以与数据库事务原子提交。
 7. 对数据库写入与消息发布之间的一致性要求较高时，应评估 Outbox Pattern。
+8. 事务一律通过 `AbstractRepository.WithTransaction` 开启，仓储取连接一律用 `TxDB`（见 14.2），不要自己 `db.Begin()` / `Session(&gorm.Session{})`。
+9. 事务句柄只经 `context.Context` 传递，不存字段、不放全局；这样同一事务可以横跨多个仓储。
 
 事务接口可以根据实际项目需要设计，不应为了抽象而提前建立复杂的事务框架。
+
+### 14.2 事务写法（AbstractRepository）
+
+`mago.AbstractRepository` 已经内置事务基础设施，仓储不需要自己写连接管理：
+
+| 能力 | 签名 | 作用 |
+|---|---|---|
+| 开事务 | `WithTransaction(ctx context.Context, fn func(ctx context.Context) error) error` | 在单事务内执行 `fn`；`fn` 返回 nil 才提交，返回 error / panic 整体回滚 |
+| 取连接 | `TxDB(ctx context.Context, do D) *gorm.DB` | ctx 里有事务就用事务，否则用 DO 配置的默认连接；返回值已 `WithContext(ctx)` |
+| 放/取句柄 | `mago.WithTx(ctx, tx)` / `mago.TxFromCtx(ctx, fallback)` | 事务句柄在 ctx 里的存取原语，事务能跨仓储共享靠的就是同一个包级 key |
+
+规则：
+
+1. **事务只在 application 开**：需要事务的写端口在 domain 声明 `WithTransaction(ctx context.Context, fn func(ctx context.Context) error) error`；`AbstractRepository` 的同名方法签名一致，仓储无需多写一行就满足端口。
+2. **仓储内部一律 `TxDB(ctx, do)`**：直接 `DB(do)` 会绕过事务，是最容易犯的错（读路径同样用它，事务内才能读到未提交数据）。
+3. **跨仓储自动同一事务**：同一 `ctx` 下不同仓储的 `TxDB` 拿到同一个事务句柄，不需要把 tx 当参数传来传去。
+4. **事务体内只做数据库操作**：外部 HTTP、发消息、发邮件不进事务（见 14.1 第 6、7 条）。
+5. **不要在事务体内再开事务**：需要复用就直接传 `ctx`，嵌套事务在不同数据库/驱动上行为不一致。
+
+```go
+// domain 端口：声明事务能力（可选，只有需要多写原子性的聚合才加）
+type OrderGateway interface {
+    // ...
+    WithTransaction(ctx context.Context, fn func(ctx context.Context) error) error
+}
+
+// application：用例决定事务边界，内部多仓储共享同一事务
+func (s *orderService) Approve(ctx context.Context, orderID uint) error {
+    return s.orders.WithTransaction(ctx, func(ctx context.Context) error {
+        order, err := s.orders.Get(ctx, orderID) // 实现里用 TxDB(ctx, do)
+        if err != nil {
+            return err
+        }
+        if err := order.Approve(); err != nil {
+            return err
+        }
+        if err := s.orders.Save(ctx, order); err != nil {
+            return err
+        }
+
+        return s.audits.Append(ctx, order) // 另一个仓储，仍在同一事务
+    })
+}
+```
+
+demo 的注册用例只写一张表，不需要事务；一旦用例出现多处写，按本节给端口加 `WithTransaction` 即可。回归用例见 `repository_test.go`（提交、回滚、跨仓储共享、ctx 取值四条），真库验证见 §12.4 的 `TestTxLive`。
 
 ---
 
@@ -1644,6 +1950,8 @@ internal/
 └── finance/
 ```
 
+本节约束的是 `internal/` 内部的组织方式。顶层的 `conf/` 不违反本节：它不含业务对象，只按装配对象（`server/`、`middleware/`）组织构造函数，见第 11.2 节。
+
 ### 16.6 依赖选型优先级
 
 遇到**协议类**（MQTT、WebSocket、gRPC、MCP、SSE…）、**功能类**（加解密、压缩、时区、鉴权、序列化…）、**开放平台接入类**（钉钉、微信、支付、OSS、短信…）的代码，按下表从上到下取第一个可用方案，不得跳级：
@@ -1663,6 +1971,7 @@ internal/
 3. 自己实现前先确认没有重复 mago 已有能力；自实现部分必须有单元测试，并对协议边界做异常用例。
 4. 新增依赖时在提交说明中回答两个问题：为什么不用上一级？该依赖由谁维护、最近一次提交是什么时候？
 5. 本原则与第 18.2 节「不要随意引入第三方框架」一致：选型不只看能不能用，还要看是否最靠前。
+6. DI 工具同样按此表判定：`github.com/google/wire` 属第 3 级（官方组织维护、编译期代码生成、零运行时依赖），反射式容器不入选（见 11.4 第 6 条）；引入时只需在 `go.mod` 里以 `tool` 指令声明，不进入运行二进制。
 
 ---
 
@@ -1681,6 +1990,7 @@ Go 文件名默认**全小写、单词直连**，既不写下划线，也不用�
 1. 测试文件：`user_test.go`；用 build tag 隔离的联调测试同样保留后缀，如 `livesmtp_test.go`、`liveoss_test.go`（`live` 与功能名直连，不写成 `live_smtp`）。
 2. 构建约束后缀：`_windows.go`、`_linux.go`、`_darwin.go`、`_amd64.go`、`_arm64.go`，Go 按 GOOS/GOARCH 自动取舍。
 3. 其他 Go 约定的特殊文件：`doc.go`（包文档）、`export_test.go`（对外暴露内部符号供测试）。
+4. **生成文件唯一例外：`wire_gen.go`**——`go tool wire` 不接受改名，所以它保留下划线；生成物入库、内容由工具维护，禁止手改，`filename_test.go` 对它单独放行（其余 `xxx_gen.go` 仍判违规）。
 
 反向要求：
 
@@ -1745,7 +2055,8 @@ func NewSequence() *Sequence {
 | `infrastructure/repository` 的读方法 → `client/vo` | 允许 | 直查列并组装视图，不加载聚合 |
 | 一个 `do/` 被两个 repository 引用 | 禁止 | 一个 DO 只对应一个 repository，读写方法都放它身上 |
 | `application` 定义读模型接口 → 同一 repository 实现 | 允许 | 轻量 CQRS 查询路径 |
-| `cmd/`、`adapter/script` → 任意层 | 允许 | 组合根负责装配；迁移脚本与 cmd 同等，只做装配与触发，不写业务逻辑 |
+| `cmd/`、`conf/`、`adapter/script` → 任意层 | 允许 | 组合根负责装配：`cmd/` 管进程生命周期与 Server 汇总（`NewApp`），`conf/` 声明依赖图（`wire.go`）、拾取桥接 provider、汇总 adapter 入口（`handler.go`）并造 Server，脚本只装配与触发；三者都不写业务逻辑 |
+| `internal/<ctx>` 任意层 → `conf/` | 禁止 | 装配只发生在组合根，业务代码不得反向依赖装配层（`conf` 只能被 `cmd` 或同类装配代码引用） |
 | `application` → `adapter` | 禁止 | 用例不能反向依赖适配器 |
 | `application` → `infrastructure` | 禁止 | 用例只能通过 Gateway 接口访问外部 |
 | `domain` → `application` | 禁止 | 领域层不能依赖用例编排 |
@@ -1789,6 +2100,8 @@ AI Agent 在新增、修改 Go 代码之前，必须先读完本文件 —— `R
 - 跨 Bounded Context 通信（第 10 章）
 - ctx 风格透传（第 16.1 节）
 - 数据迁移与修数脚本位置：`internal/<ctx>/adapter/script/`（不建 migrations 目录）
+- 启动装配落点：进程入口只有 `cmd/<app>/main.go`（`NewApp` 形参禁 adapter 实例），依赖图（`conf/wire.go`）、桥接 provider（`conf/provider.go`）、adapter 入口汇总与绑定（`conf/handler.go`）、协议中间件、业务自定义配置在 `conf/`（第 11 章）
+- 定时任务与消息队列：多副本重复执行无副作用的任务用 `helper.Cron`，有副作用的任务走队列（`dispatcher.TaskID` 去重）或分布式锁；消息队列优先 `queuex/redisq`（第 12.3 节）
 
 不得为了完成单个需求而破坏既有架构约束。
 
@@ -1814,6 +2127,8 @@ AI Agent 在新增、修改 Go 代码之前，必须先读完本文件 —— `R
 8. 不要直接修改其他 Bounded Context 的内部领域对象。
 9. 不要随意引入新的第三方框架；协议、功能、开放平台接入一律按第 16.6 节的优先级选型（标准库 → mago 组件 → 社区官方库 → 高热度且在维护的库 → 自己实现）。
 10. 不要为了追求架构完整而引入当前没有实际需求的抽象。
+11. 不要把组件构造塞进 `cmd/`，也不要把业务判断塞进 `conf/`：前者让入口膨胀，后者绕过四层。
+12. 不要手改 `conf/wire_gen.go`，也不要绕过 wire 在 `conf/` 里手写 `new XxxYyy(...)`：装配关系只允许来自 `wire.go` 的 `wire.Build`（第 11.5 节）。
 
 ### 18.3 开发完成后
 
@@ -1826,6 +2141,8 @@ AI Agent 在新增、修改 Go 代码之前，必须先读完本文件 —— `R
 - [ ] Command 是否正确执行领域规则？
 - [ ] Query 是否采用合理的查询方式？
 - [ ] DTO、Domain Entity 和 Persistence Model 是否职责清晰？
+- [ ] 新增/调整的装配是否落在 `cmd/`（进程）或 `conf/`（组件），`internal/` 是否仍未反向 import `conf/`？
+- [ ] 改过 provider 后是否重新执行 `go tool wire ./conf`，且 `conf/wire_gen.go` 已随之更新？
 - [ ] 事务边界是否合理？
 - [ ] 是否处理错误？
 - [ ] 是否补充必要测试？

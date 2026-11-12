@@ -20,5 +20,6 @@ Go 后端框架：COLA 5.0 分层架构，路由用 hertz、ORM 用 gorm、模�
 
 ```bash
 cd demo
+go tool wire ./conf    # 依赖装配由 wire 生成，改过 provider 就要重跑
 go build ./... && go vet ./... && go test -count=1 ./...
 ```

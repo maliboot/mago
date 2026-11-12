@@ -11,6 +11,23 @@ import (
 // allowedSuffix 是 §16.7 允许的下划线后缀：测试文件、GOOS/GOARCH 构建约束。
 var allowedSuffix = regexp.MustCompile(`(?i)_(test|windows|linux|darwin|freebsd|openbsd|netbsd|android|ios|js|wasip1|plan9|illumos|dragonfly|amd64|arm64|arm|386|ppc64|ppc64le|mips|mipsle|mips64|mips64le|s390x|riscv64|loong64|wasm)$`)
 
+// generatedStems 是代码生成器固定输出名：工具不接受改名，是本规范的唯一例外（§16.7）。
+// wire_gen.go 由 `go tool wire` 生成，禁止手改。
+var generatedStems = map[string]bool{
+	"wire_gen": true,
+}
+
+// namingViolation 判定文件名主干是否违反 §16.7。
+func namingViolation(stem string) bool {
+	if generatedStems[stem] {
+		return false
+	}
+
+	base := allowedSuffix.ReplaceAllString(stem, "")
+
+	return strings.Contains(base, "_") || base != strings.ToLower(base)
+}
+
 // skipDirs 是不参与命名扫描的目录。
 var skipDirs = map[string]bool{
 	".git": true, ".idea": true, "runtime": true, "node_modules": true, "vendor": true,
@@ -47,12 +64,8 @@ func TestGoFileNaming(t *testing.T) {
 
 		checked++
 
-		base := allowedSuffix.ReplaceAllString(stem, "")
-		if strings.Contains(base, "_") {
-			t.Errorf("%s: 文件名出现下划线，应改为 %s.go（下划线只允许 _test/_windows/_linux 等特殊后缀）", path, strings.ReplaceAll(stem, "_", ""))
-		}
-		if base != strings.ToLower(base) {
-			t.Errorf("%s: 文件名出现大写，应改为 %s.go", path, strings.ToLower(stem))
+		if namingViolation(stem) {
+			t.Errorf("%s: 文件名不符合 §16.7，应改为 %s.go（下划线只允许 _test/_windows/_linux 等特殊后缀，生成文件只有 wire_gen.go）", path, strings.ReplaceAll(stem, "_", ""))
 		}
 
 		return nil
@@ -77,15 +90,16 @@ func TestGoFileNamingRule(t *testing.T) {
 		{"user_test", false},
 		{"livesmtp_test", false},
 		{"tool_windows", false},
+		{"wire_gen", false},
+		{"wire", false},
 		{"user_address", true},
 		{"live_smtp_test", true},
+		{"my_gen", true},
 		{"User", true},
 	}
 
 	for _, c := range cases {
-		base := allowedSuffix.ReplaceAllString(c.stem, "")
-		got := strings.Contains(base, "_") || base != strings.ToLower(base)
-		if got != c.bad {
+		if got := namingViolation(c.stem); got != c.bad {
 			t.Errorf("规则判定 %q = %v, 期望 %v", c.stem, got, c.bad)
 		}
 	}

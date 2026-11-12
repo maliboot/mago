@@ -55,8 +55,12 @@ func (t *DateTime) UnmarshalJSON(data []byte) error {
 
 // GormDataType 声明 GORM 字段类型，避免 GORM 依据 driver.Valuer 的返回值反推成 time，
 // 从而绕过本类型的 Value/Scan（零值写 NULL、字符串解析等语义会丢）。
+//
+// 必须返回 "time"（schema.Time）而不是 "datetime"：GORM 用这个值判断 autoCreateTime /
+// autoUpdateTime 该写时间还是 unix 秒，返回非 Time 会让它把整数塞进时间列（MySQL 报 1292）。
+// 真实列类型由 GormDBDataType 控制，仍是 datetime。
 func (DateTime) GormDataType() string {
-	return "datetime"
+	return "time"
 }
 
 // GormDBDataType 按方言给出列类型，保证迁移出来的列仍是时间列。
@@ -76,12 +80,14 @@ func (DateTime) GormDBDataType(db *gorm.DB, _ *schema.Field) string {
 }
 
 // Value 实现 driver.Valuer：零值写 NULL，其余写 time.Time。
+// 写入前截断到秒：datetime / timestamp 列只有秒精度，不截断时 MySQL 会四舍五入
+// （如 12:00:00.504 存成 12:00:01），内存值与库值就会差一秒。
 func (t DateTime) Value() (driver.Value, error) {
 	if t.Time.IsZero() {
 		return nil, nil
 	}
 
-	return t.Time, nil
+	return t.Time.Truncate(time.Second), nil
 }
 
 // Scan 实现 sql.Scanner，兼容 time.Time、字符串与字节切片（MySQL 驱动两种都可能出现）。

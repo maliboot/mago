@@ -31,7 +31,7 @@ func NewUser(c *config.Conf) *User {
 func (r *User) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
 	var do db.User
 
-	tx := r.DB(do).WithContext(ctx).Select("*").Where("email = ?", domain.NormalizeEmail(email)).First(&do)
+	tx := r.TxDB(ctx, do).Select("*").Where("email = ?", domain.NormalizeEmail(email)).First(&do)
 	if err := tx.Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, mago.NewError(mago.ErrUriNotFound).WithMsg("用户不存在")
@@ -51,7 +51,7 @@ func (r *User) ByID(ctx context.Context, id uint) (*vo.UserVO, error) {
 
 	var do db.User
 
-	tx := r.DB(do).WithContext(ctx).Select("*").Where("id = ?", id).First(&do)
+	tx := r.TxDB(ctx, do).Select("*").Where("id = ?", id).First(&do)
 	if err := tx.Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, mago.NewError(mago.ErrUriNotFound).WithMsg("用户不存在")
@@ -66,11 +66,11 @@ func (r *User) ByID(ctx context.Context, id uint) (*vo.UserVO, error) {
 func (r *User) Create(ctx context.Context, user *domain.User) error {
 	do := convertor.UserToDO(user)
 
-	return r.DB(*do).WithContext(ctx).Create(do).Error
+	return r.TxDB(ctx, *do).Create(do).Error
 }
 
 func (r *User) Update(ctx context.Context, user *domain.User) error {
 	do := convertor.UserToDO(user)
 
-	return r.DB(*do).WithContext(ctx).Where("id = ?", user.ID).Updates(do).Error
+	return r.TxDB(ctx, *do).Where("id = ?", user.ID).Updates(do).Error
 }

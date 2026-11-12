@@ -1,6 +1,7 @@
 package mago
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -32,6 +33,47 @@ type Repository[D DataObject] interface {
 type AbstractRepository[D DataObject] struct {
 	Conf *config.Conf
 	Err  error
+}
+
+// txKey 是事务句柄在 ctx 中的键：私有空结构体，避免与其他包写入的 ctx 值冲突。
+type txKey struct{}
+
+// WithTx 把事务句柄放进 ctx；只在 WithTransaction（或自建事务）内部调用。
+func WithTx(ctx context.Context, tx *gorm.DB) context.Context {
+	return context.WithValue(ctx, txKey{}, tx)
+}
+
+// TxFromCtx 优先返回 ctx 中的事务句柄，没有则回退到 fallback（仓储的默认连接）。
+// 事务能跨仓储共享，靠的就是同一个包级 txKey。
+func TxFromCtx(ctx context.Context, fallback *gorm.DB) *gorm.DB {
+	if tx, ok := ctx.Value(txKey{}).(*gorm.DB); ok && tx != nil {
+		return tx
+	}
+
+	return fallback
+}
+
+// WithTransaction 在单个事务内执行 fn：事务句柄经 ctx 传给 fn，
+// fn 内的仓储操作（用 TxDB 取连接）自动进入同一事务；fn 返回错误即整体回滚。
+// 事务边界由 application 决定（README §14.1），本方法只提供事务基础设施。
+func (d *AbstractRepository[D]) WithTransaction(ctx context.Context, fn func(ctx context.Context) error) error {
+	var do D
+
+	db := d.DB(do)
+	if d.Err != nil {
+		return d.Err
+	}
+
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return fn(WithTx(ctx, tx))
+	})
+}
+
+// TxDB 返回本次调用应使用的连接：ctx 里带事务就用事务，否则用 DO 配置的默认连接；
+// 返回值已 WithContext(ctx)，超时与取消继续向下透传。
+// 事务内的读写一律走它，直接用 DB(do) 会绕过事务。
+func (d *AbstractRepository[D]) TxDB(ctx context.Context, do D) *gorm.DB {
+	return TxFromCtx(ctx, d.DB(do)).WithContext(ctx)
 }
 
 func (d *AbstractRepository[D]) Error() error {

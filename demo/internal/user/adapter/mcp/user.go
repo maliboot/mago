@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"net/http"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -17,54 +16,38 @@ const (
 	ToolRegister = "user_register"
 	ToolMe       = "user_me"
 	ToolSendCode = "user_send_verify_code"
-
-	serverName    = "mago-user-mcp"
-	serverVersion = "1.0.0"
 )
 
-// UserMcp 是用户上下文的 MCP 入口：用官方 Go SDK 注册工具，与 HTTP 入口共用同一个应用服务。
+// UserMcp 是用户上下文的 MCP 入口：只声明本上下文的工具，与 HTTP 入口共用同一个应用服务。
+// 协议引擎（sdk.Server、Streamable HTTP handler、/mcp 挂载）在 conf/server/mcp.go，本层不建引擎。
 // 入参复用 client/dto，出参复用 client/vo，本层不定义任何业务结构。
 type UserMcp struct {
 	service application.UserService
-	server  *sdk.Server
 }
 
 // 非单例：入口适配器，由组合根装配一次。
 func NewUserMcp(service application.UserService) *UserMcp {
-	m := &UserMcp{service: service}
-	m.server = sdk.NewServer(&sdk.Implementation{Name: serverName, Version: serverVersion}, nil)
-	m.registerTools()
-
-	return m
+	return &UserMcp{service: service}
 }
 
-// Handler 返回 MCP 的 Streamable HTTP 处理器，由 cmd 挂到现有 HTTP 服务上。
-func (m *UserMcp) Handler() http.Handler {
-	return sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return m.server }, nil)
-}
-
-// Server 暴露底层 SDK server，便于测试用内存传输直连。
-func (m *UserMcp) Server() *sdk.Server {
-	return m.server
-}
-
-func (m *UserMcp) registerTools() {
-	sdk.AddTool(m.server, &sdk.Tool{
+// RegisterTools 把本上下文的工具注册到协议引擎上；由 server.NewMcpServer 在装配时调用。
+func (m *UserMcp) RegisterTools(srv *sdk.Server) {
+	sdk.AddTool(srv, &sdk.Tool{
 		Name:        ToolLogin,
 		Description: "用邮箱和密码登录，返回访问令牌。",
 	}, m.login)
 
-	sdk.AddTool(m.server, &sdk.Tool{
+	sdk.AddTool(srv, &sdk.Tool{
 		Name:        ToolRegister,
 		Description: "注册新账号。",
 	}, m.register)
 
-	sdk.AddTool(m.server, &sdk.Tool{
+	sdk.AddTool(srv, &sdk.Tool{
 		Name:        ToolMe,
 		Description: "按用户 ID（userId）查询用户信息。",
 	}, m.me)
 
-	sdk.AddTool(m.server, &sdk.Tool{
+	sdk.AddTool(srv, &sdk.Tool{
 		Name:        ToolSendCode,
 		Description: "向邮箱发送 6 位登录验证码。",
 	}, m.sendVerifyCode)

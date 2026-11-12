@@ -1,19 +1,13 @@
-package main
+package server
 
 import (
 	"context"
 	"fmt"
 	"strings"
 
-	userhttp "tests/internal/user/adapter/http"
-	usermcp "tests/internal/user/adapter/mcp"
-	"tests/internal/user/application"
-	"tests/internal/user/infrastructure/repository"
-
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/middlewares/server/recovery"
 	"github.com/cloudwego/hertz/pkg/app/server"
-	"github.com/cloudwego/hertz/pkg/common/adaptor"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
 	"github.com/maliboot/mago"
 	"github.com/maliboot/mago/autoloadx"
@@ -21,6 +15,8 @@ import (
 	eghelper "github.com/maliboot/mago/helper"
 )
 
+// NewHttpServer 只构造 hertz server 与通用中间件（access log、request id、recovery、静态目录、探活），
+// 不碰业务路由：adapter 入口由 wire 装配成 conf.Handler，再由 Handler.Bind 挂到本 engine 上。
 func NewHttpServer(c *config.Conf) *mago.Http {
 	// http
 	h := mago.NewHttp(c, server.Default(
@@ -56,24 +52,6 @@ func NewHttpServer(c *config.Conf) *mago.Http {
 		mago.NewResponse(ctx).Success("pong")
 	})
 
-	// 自动注册路由
-	Register(h, c)
-
 	autoloadx.TenantJwtInit(c, "frontend")
 	return h
-}
-
-func Register(h *mago.Http, conf *config.Conf) {
-	v1 := h.Group("/api/v1/user")
-	authed := v1.Group("", conf.Server.Http.JWT["frontend"].MiddlewareFunc())
-
-	// 组合根：infrastructure → application → adapter 逐层装配
-	// 一个 DO 只有一个 repository：读写方法都在同一个实例上
-	users := repository.NewUser(conf)
-	smtp := repository.NewSMTP(conf.SMTP)
-	userSvc := application.NewUserService(users, users, repository.NewPassword(), repository.NewToken(conf), smtp)
-	userhttp.NewUserController(userSvc).Router(v1, authed)
-
-	// MCP 入口：官方 go-sdk 的 Streamable HTTP 处理器，经 hertz 官方 adaptor 挂载
-	h.Any("/mcp", adaptor.HertzHandler(usermcp.NewUserMcp(userSvc).Handler()))
 }

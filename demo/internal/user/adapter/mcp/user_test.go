@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -45,6 +46,14 @@ func (fakeService) Me(context.Context, uint) *mago.VO[vo.UserVO] {
 	return mago.NewVO[vo.UserVO](nil, vo.NewUserVO("a@b.com", enum.UserStatusActive))
 }
 
+// newTestEngine 在测试内自建协议引擎：引擎属于 conf/server，adapter 测试不反向依赖装配层。
+func newTestEngine() *sdk.Server {
+	srv := sdk.NewServer(&sdk.Implementation{Name: "user-mcp-test", Version: "1.0.0"}, nil)
+	NewUserMcp(fakeService{}).RegisterTools(srv)
+
+	return srv
+}
+
 // connectMemory 用官方 SDK 的内存传输建立一对已初始化的会话。
 func connectMemory(t *testing.T) *sdk.ClientSession {
 	t.Helper()
@@ -52,8 +61,8 @@ func connectMemory(t *testing.T) *sdk.ClientSession {
 	ctx := context.Background()
 	serverTransport, clientTransport := sdk.NewInMemoryTransports()
 
-	srv := NewUserMcp(fakeService{})
-	serverSession, err := srv.Server().Connect(ctx, serverTransport, nil)
+	srv := newTestEngine()
+	serverSession, err := srv.Connect(ctx, serverTransport, nil)
 	if err != nil {
 		t.Fatalf("服务端连接失败：%v", err)
 	}
@@ -192,7 +201,10 @@ func textOf(t *testing.T, res *sdk.CallToolResult) string {
 
 // TestStreamableHTTP 走真实 HTTP：httptest 起服务 + 官方 Streamable HTTP 客户端。
 func TestStreamableHTTP(t *testing.T) {
-	ts := httptest.NewServer(NewUserMcp(fakeService{}).Handler())
+	srv := newTestEngine()
+	ts := httptest.NewServer(sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server {
+		return srv
+	}, nil))
 	t.Cleanup(ts.Close)
 
 	client := sdk.NewClient(&sdk.Implementation{Name: "user-mcp-http-test", Version: "1.0.0"}, nil)

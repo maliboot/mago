@@ -10,11 +10,13 @@ import (
 )
 
 // dateTimeModel 是验证 DateTime 与 GORM 协作的最小模型。
+// 字段故意不叫 CreatedAt/UpdatedAt：GORM 会按字段名自动填充这两个名字的时间字段，
+// 这里要验证的是「手动赋值 / 零值写 NULL」的行为。
 type dateTimeModel struct {
-	ID        uint
-	Name      string
-	CreatedAt DateTime
-	DeletedAt DateTime
+	ID          uint
+	Name        string
+	PublishedAt DateTime
+	RemovedAt   DateTime
 }
 
 // autoTimeModel 复刻 dataobject.go 里的自动时间字段写法。
@@ -29,7 +31,10 @@ type autoTimeModel struct {
 func newSQLiteDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{
+		// 与 config.DataBaseConf 一致：时间截断到秒，避免内存值与库值差一秒
+		NowFunc: func() time.Time { return time.Now().Truncate(time.Second) },
+	})
 	if err != nil {
 		t.Fatalf("打开内存库失败: %v", err)
 	}
@@ -46,7 +51,7 @@ func TestDateTimeGormRoundTrip(t *testing.T) {
 	db := newSQLiteDB(t)
 
 	now := time.Date(2026, 11, 11, 10, 20, 30, 0, time.Local)
-	want := dateTimeModel{Name: "with-time", CreatedAt: DateTime{Time: now}}
+	want := dateTimeModel{Name: "with-time", PublishedAt: DateTime{Time: now}}
 
 	if err := db.Create(&want).Error; err != nil {
 		t.Fatalf("Create: %v", err)
@@ -57,11 +62,11 @@ func TestDateTimeGormRoundTrip(t *testing.T) {
 		t.Fatalf("First: %v", err)
 	}
 
-	if !got.CreatedAt.Time.Equal(now) {
-		t.Fatalf("读回时间 = %v, 期望 %v", got.CreatedAt.Time, now)
+	if !got.PublishedAt.Time.Equal(now) {
+		t.Fatalf("读回时间 = %v, 期望 %v", got.PublishedAt.Time, now)
 	}
-	if !got.DeletedAt.Time.IsZero() {
-		t.Fatalf("零值字段应读回零值，实际 %v", got.DeletedAt.Time)
+	if !got.RemovedAt.Time.IsZero() {
+		t.Fatalf("零值字段应读回零值，实际 %v", got.RemovedAt.Time)
 	}
 }
 
@@ -75,7 +80,7 @@ func TestDateTimeZeroWritesNull(t *testing.T) {
 	}
 
 	var isNull int
-	if err := db.Raw("SELECT created_at IS NULL FROM date_time_models WHERE id = ?", row.ID).Scan(&isNull).Error; err != nil {
+	if err := db.Raw("SELECT published_at IS NULL FROM date_time_models WHERE id = ?", row.ID).Scan(&isNull).Error; err != nil {
 		t.Fatalf("查询 NULL 失败: %v", err)
 	}
 

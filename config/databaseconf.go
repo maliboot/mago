@@ -110,6 +110,12 @@ func (dc *DataBaseConf) initDbConnector() {
 				NoLowerCase:   dc.NoLowerCase,
 			},
 			Logger: logx.NewGormLogger(),
+			// NowFunc 截断到秒：datetime/timestamp 列只有秒精度，
+			// 不截断会让 autoCreateTime/autoUpdateTime 写入时被 MySQL 四舍五入，
+			// 造成「刚插入的内存对象」与「库里的值」差一秒。
+			NowFunc: func() time.Time {
+				return time.Now().Truncate(time.Second)
+			},
 		})
 	})
 }
