@@ -11,3 +11,9 @@ type UserAuthRequest struct {
 	Ext            string `json:"ext,omitempty" jsonschema:"扩展字段，可选"`
 	IsExtendExpire bool   `json:"extendExpire,omitempty" jsonschema:"是否延长令牌有效期，可选"`
 }
+
+// VerifyCodeRequest 是发送验证码的入参。
+type VerifyCodeRequest struct {
+	mago.AbstractDTO
+	Email string `json:"email" jsonschema:"接收验证码的邮箱"`
+}

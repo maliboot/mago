@@ -55,6 +55,15 @@ queue:
   ## 队列聚合 max_size为聚合最大等待任务量, max_delay为聚合最大等待时间(ms)。两者有一个为0则默认不聚合
   aggregator_max_size: 10
   aggregator_max_delay: 5000
+smtp:
+  enable: false
+  ## 465 端口走隐式 TLS 时把 ssl 设为 true，其余端口用 STARTTLS
+  ssl: false
+  host: smtp.example.com
+  port: 587
+  username: no-reply@example.com
+  password: change-me
+  from: no-reply@example.com
 mqtt:
   enable: false
   ip: 127.0.0.1

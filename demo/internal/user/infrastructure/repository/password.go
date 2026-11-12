@@ -1,4 +1,4 @@
-package util
+package repository
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 // Password 是 domain.PasswordHasher 的 bcrypt 实现。
 type Password struct{}
 
+// 非单例：无状态纯实现，随手构造即可，做成单例没有收益。
 func NewPassword() *Password {
 	return &Password{}
 }

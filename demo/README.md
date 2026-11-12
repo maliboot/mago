@@ -96,8 +96,9 @@ demo/
     │   │   │   └── user.go         # HTTP Controller
     │   │   ├── mcp/
     │   │   │   └── user.go         # MCP 工具注册（官方 go-sdk）
-    │   │   └── script/
-    │   │       └── user_migration_20261110.sql   # 数据迁移 / 修数脚本
+    │   │   └── script/            # 数据迁移 / 修数：逻辑在 repository/migration.go，这里只放入口
+    │   │       ├── seeduser/main.go              # 建表 + 默认用户张三（可重复执行）
+    │   │       └── user_migration_20261110.sql   # 一次性修数脚本
     │   │
     │   ├── client/                 # 跨模块契约：本上下文产出，其他上下文只依赖这里
     │   │   ├── api/
@@ -113,23 +114,34 @@ demo/
     │   ├── application/            # 用例编排
     │   │   └── user.go             # Service 接口 + 实现 + 构造函数
     │   │
-    │   ├── domain/                 # 领域层
-    │   │   ├── user.go             # Aggregate / Entity / ValueObject
-    │   │   ├── gateway.go          # 出站端口（接口）
-    │   │   └── token.go            # TokenIssuer 等能力端口
+    │   ├── domain/                 # 领域层：一个聚合一个位置
+    │   │   ├── user.go             # 聚合只有根时直接一个文件（User 聚合根）
+    │   │   └── gateway.go          # 出站端口（只有一个端口时）
+    │   │                           # 端口多于一个时改为 gateway/ 子包，一端口一文件
     │   │
     │   ├── infrastructure/         # 技术实现
-    │   │   ├── repository/         # 该 DO 唯一的 repository：写走 Gateway，读直查列
-    │   │   │   └── user.go         # type User struct
-    │   │   ├── do/                 # 数据对象，按介质分子包
-    │   │   │   └── db/
-    │   │   │       └── user.go     # type User struct（表结构）
+    │   │   ├── repository/         # 出站实现：DO 唯一的 repository（写走 Gateway、读直查列）+ 外部/本机资源调用
+    │   │   │   ├── user.go         # type User struct
+    │   │   │   ├── smtp.go         # 第三方/短连接调用逻辑（实现 application 的 CodeSender）
+    │   │   │   ├── sequence.go     # 本机编号计数器（纯内存，不落盘）
+    │   │   │   ├── weather.go      # 天气查询 HTTP 适配器（open-meteo，免密钥）
+    │   │   │   ├── migration.go    # 数据迁移：建表 + 默认种子用户（幂等）
+    │   │   │   ├── password.go     # bcrypt 散列（实现 application 的 PasswordHasher）
+    │   │   │   └── token.go        # JWT 签发（实现 application 的 TokenIssuer）
+    │   │   ├── do/                 # 数据对象：按通用协议/分类分子包（db/cache/mq/http/mail/rpc）
+    │   │   │   ├── db/
+    │   │   │   │   └── user.go     # type User struct（表结构）
+    │   │   │   ├── mail/
+    │   │   │   │   └── verifycode.go  # type VerifyCode struct（验证码邮件报文）
+    │   │   │   ├── http/
+    │   │   │   │   ├── currentweather.go        # 天气查询请求报文
+    │   │   │   │   └── currentweatherresult.go  # 天气查询响应报文
+    │   │   │   └── cache/
+    │   │   │       └── counter.go     # type Counter struct（编号计数内存快照）
     │   │   ├── convertor/          # DO ↔ 领域对象转换
     │   │   │   └── user.go         # UserToEntity / UserToDO
-    │   │   └── util/               # 层内辅助：类型转换、散列、令牌签发等
-    │   │       ├── bool.go
-    │   │       ├── password.go
-    │   │       └── token.go
+    │   │   └── util/               # 只放无状态纯辅助（类型转换、键拼接），不承载功能逻辑
+    │   │       └── bool.go
     │   │
     │   └── (其余子领域按需新建，如 address/，结构与本上下文同构)
     │
@@ -146,9 +158,9 @@ demo/
 | `internal/<ctx>/adapter/` | 入口适配器，按协议分子目录（`http/`、`mcp/`、`mq/`、`job/`），文件按业务对象命名 |
 | `internal/<ctx>/client/` | 跨模块契约：`api/` 接口、`dto/`、`vo/`、`enum/`、`error.go` 错误码 |
 | `internal/<ctx>/application/` | 用例编排、实现 `client/api` 的接口 |
-| `internal/<ctx>/domain/` | 聚合、实体、值对象、领域服务、领域错误、Gateway 接口 |
+| `internal/<ctx>/domain/` | 聚合、实体、值对象、领域服务、领域错误、出站端口（单端口 `gateway.go`，多端口 `gateway/` 子包） |
 | `internal/<ctx>/infrastructure/` | `repository/` 一个 DO 一个 repository（读写都在这里）、`do/` 数据对象、`convertor/`、`util/` |
-| `internal/<ctx>/adapter/script/` | 数据迁移与修数脚本，按 `上下文_说明_日期.sql` 命名 |
+| `internal/<ctx>/adapter/script/` | 数据迁移与修数入口：可重复的逻辑写 `infrastructure/repository/migration.go`，脚本只做装配与触发（如 `seeduser/main.go`）；一次性修数用 `上下文_说明_日期.sql` |
 | `conf.yml` | 运行配置 |
 | `README.md` | 架构规范，唯一文档入口（不另建 docs/ 目录） |
 | `llms.txt` | AI Agent 速查索引，指向 README.md 对应章节（第 18 章为完整约束） |
@@ -192,7 +204,8 @@ internal/
 2. 不创建全局技术分类目录（`handlers/`、`services/`、`repositories/`、`models/`、`dto/` 这类跨上下文的目录）。
 3. 跨上下文复用的技术能力使用独立 Package 或框架能力（`config`、`logx`、`httpx`、`queuex` 等），不放进任一业务上下文。
 4. 不建根目录 `docs/`：架构规范就是根目录 `README.md`，ADR 直接写进正文对应章节。
-5. 不建根目录 `migrations/`：数据迁移与修数一律做成 `adapter/script/` 下的脚本，随上下文走，可回放、可评审。
+5. 不建根目录 `migrations/`：数据迁移与修数一律做成 `adapter/script/` 下的入口，随上下文走，可回放、可评审；
+   可重复执行的迁移逻辑（建表、种子数据）写在 `infrastructure/repository/migration.go`，脚本只负责装配与触发（示例 `seeduser`）。
 
 ### 2.4 infrastructure 分层与文件命名
 
@@ -202,17 +215,24 @@ internal/
 |---|---|---|
 | `repository/` | domain 端口（Gateway）的实现 | `repository/user.go`，内含 `type User struct` |
 | `repository/`（读方法） | 读路径挂在同一个 repository 上，只查展示列并组装 VO | `repository/user.go` 中的 `ByID` |
-| `do/` | 数据对象（DataObject），按介质分子包 `db/`、`redis/`、`mq/`、`http/` | `do/db/user.go`，内含 `type User struct` |
+| `do/` | 数据对象（DataObject），按**通用协议/分类**分子包：`db/`、`cache/`、`mq/`、`http/`、`mail/`、`rpc/` | `do/db/user.go`，内含 `type User struct` |
 | `convertor/` | DO 与领域聚合的双向转换 | `convertor/user.go`，内含 `UserToEntity` / `UserToDO` |
-| `util/` | 层内辅助：类型转换、散列、令牌签发、键拼接等 | `util/bool.go`、`util/password.go`、`util/token.go` |
+| `util/` | 只放无状态的纯辅助：类型转换、键拼接等；散列、签发、HTTP 调用这类功能逻辑必须进 `repository/` | `util/bool.go` |
+| `repository/`（外部服务） | 第三方开放平台 API、SMTP 等短连接服务的调用逻辑 | `repository/smtp.go` |
+| `repository/`（本机资源） | 本机内存缓存、磁盘文件的读写与并发控制 | `repository/sequence.go` |
+| `do/<分类>/` | 上述外部调用 / 本机资源的报文与内存结构（按通用分类建子包，不按业务功能命名） | `do/mail/verifycode.go`、`do/cache/counter.go` |
 
 约定：
 
-1. 文件名 = 业务对象名（小写下划线或单词），如 `user.go`、`user_address.go`，一个对象一个文件。
-2. 同一业务对象在不同层使用各自的类型，靠包名区分（`domain.User`、`repository.User`、`db.User`），转换函数写在 `convertor/` 内。
-3. `do/` 下的每个介质子包只描述该介质的结构：数据库表、缓存键值、消息体、HTTP 报文，不写业务规则。
-4. 一个业务对象需要多种介质时并列建文件，如 `do/db/user.go` 与 `do/redis/user.go`，互不引用。
-5. 同样的命名规则适用于其他层：`client/api/user.go`、`client/dto/user.go`、`application/user.go`、`domain/user.go`、`adapter/http/user.go`、`infrastructure/repository/user.go`。
+1. **逻辑功能一律进 `repository/`，不在 infrastructure 根目录或 `util/` 里单开文件实现功能**：
+   散列、签发、HTTP 调用、本机计数、文件读写等都放 `repository/<实现>.go`，需要描述结构时配 `do/<通用分类>/`；
+   `util/` 只保留无状态纯辅助（如 `BoolToInt8`），不得承载 IO、外部调用或业务规则。
+2. 文件名 = 业务对象名，默认全小写、单词直连，如 `user.go`、`useraddress.go`，一个对象一个文件；
+   下划线与大小写只留给 `_test`、`_windows`、`_linux` 这类特殊后缀（见 16.7）。
+3. 同一业务对象在不同层使用各自的类型，靠包名区分（`domain.User`、`repository.User`、`db.User`），转换函数写在 `convertor/` 内。
+4. `do/` 下的每个分类子包只描述该分类的结构：数据库表、缓存键值、消息体、HTTP 报文，不写业务规则。
+5. 一个业务对象需要多种介质时并列建文件，如 `do/db/user.go` 与 `do/redis/user.go`，互不引用。
+6. 同样的命名规则适用于其他层：`client/api/user.go`、`client/dto/user.go`、`application/user.go`、`domain/user.go`、`adapter/http/user.go`、`infrastructure/repository/user.go`。
 6. 所有 DTO、VO、枚举、错误码、对外接口一律放 `client/`，`application` 与 `adapter` 不得再建自己的 dto 目录。
 
 ---
@@ -457,6 +477,25 @@ func (o *Order) Approve() error {
 3. 需要强约束的小值对象（如金额 `Money`、时间区间）可以保留私有字段 + 构造函数，保证自身始终有效。
 4. 导出字段不等于可以导出内部集合，切片/映射字段仍以只读方式使用，修改通过方法完成。
 
+### 4.5 聚合的文件与目录组织
+
+一个聚合一个位置，聚合内的聚合根、实体、值对象都跟着它走：
+
+| 情况 | 组织方式 | 示例 |
+| --- | --- | --- |
+| 聚合只有聚合根 | 直接一个文件，**不建目录** | `domain/user.go`，内含 `type User struct` |
+| 聚合有根 + 实体/值对象 | 建 `domain/<聚合>/` 目录 | `domain/order/order.go`、`order/orderitem.go`、`order/orderstatus.go` |
+
+规则：
+
+1. 一个聚合根、一个实体、一个值对象各占一个 go 文件，文件里至少包含一个 struct；文件名 = 类型名全小写直连
+   （`OrderItem` → `orderitem.go`，见 16.7）。
+2. 一个文件只放一个模型类型：不把多个小 VO 合并进同一文件，方便审查、diff 与定位。
+3. 聚合内的实体/值对象不提供外部状态变更入口，状态变更统一走聚合根方法。
+4. 端口不是聚合模型：单端口写 `domain/gateway.go`，多端口建 `domain/gateway/` 子包（见 6.3），不放进聚合目录。
+5. 聚合目录里只放领域模型：不放 repository、DO、DTO、转换函数；跨层转换在 `infrastructure/convertor`。
+6. 只有一个聚合根时禁止建 `domain/user/user.go` 这种单文件目录 —— 目录会让人误以为聚合里还有别的类型。
+
 ---
 
 ## 5. Application 应用层
@@ -579,7 +618,7 @@ type Gateway interface {
 }
 ```
 
-接口放在 `domain/gateway.go`，方法签名只出现领域类型，不出现 `*gorm.DB`、HTTP 客户端等技术类型。
+只有一个出站端口时，接口放在 `domain/gateway.go`；端口多于一个时改用 `domain/gateway/` 子包（见 6.3）。方法签名只出现领域类型，不出现 `*gorm.DB`、HTTP 客户端等技术类型。
 
 ### 6.2 infrastructure 实现 Gateway
 
@@ -630,11 +669,16 @@ var _ order.Gateway = (*OrderRepository)(nil)
 ### 6.3 端口放置原则
 
 1. 聚合自身的持久化端口（`XxxGateway`）放 `domain`；不建全局 `repository` Package。
-2. 技术能力端口（密码散列、令牌签发、文件、短信等）由**使用方 `application` 定义**，不放 `domain`：
+2. 出站端口的落位按数量分两种：只有一个端口时写 `domain/gateway.go`；有多个端口时建 `domain/gateway/`
+   子包（包名 `gateway`），一个端口一个文件，文件名 = 业务对象名、全小写单词直连，
+   如 `gateway/user.go` 内含 `UserGateway`、`gateway/payment.go` 内含 `PaymentGateway`。
+   该子包只允许 import `domain` 与标准库，禁止 import `application`、`adapter`、`infrastructure`。
+3. 拆到子包后，实现类可以由同一个 struct 同时实现多个端口，但持久化仍守「一个 DO 一个 repository」。
+4. 技术能力端口（密码散列、令牌签发、文件、短信等）由**使用方 `application` 定义**，不放 `domain`：
    这些能力不是领域概念，domain 不需要认识它们，放进来只会让领域层混入技术细节。
-3. 端口方法使用领域语言（`GetByID`、`Save`、`FindByPhone`），不暴露 SQL、分页游标等存储细节。
-4. 按能力建端口（`OrderGateway`、`PaymentGateway`），不做一个万能 Repository。
-5. 查询型端口放 `application`（`UserQuery`），直接返回 `client/vo`，不为此加载完整聚合（见第 8 章）。
+5. 端口方法使用领域语言（`GetByID`、`Save`、`FindByPhone`），不暴露 SQL、分页游标等存储细节。
+6. 按能力建端口（`OrderGateway`、`PaymentGateway`），不做一个万能 Repository。
+7. 查询型端口放 `application`（`UserQuery`），直接返回 `client/vo`，不为此加载完整聚合（见第 8 章）。
 
 ---
 
@@ -753,12 +797,130 @@ func (m *UserMcp) login(ctx context.Context, _ *sdk.CallToolRequest, in dto.User
 传输与挂载：
 
 1. 传输用 Streamable HTTP：`sdk.NewStreamableHTTPHandler(...)` 返回标准 `http.Handler`。
-2. 挂载复用现有 hertz 服务，不新开端口：`h.Any("/v1/mcp", adaptor.HertzHandler(handler))`，`adaptor` 是 hertz 官方 `pkg/common/adaptor`。
+2. 挂载复用现有 hertz 服务，不新开端口：`h.Any("/mcp", adaptor.HertzHandler(handler))`，`adaptor` 是 hertz 官方 `pkg/common/adaptor`。
+   MCP 是协议入口，不套资源路由，用独立路径 `/mcp`；对外 REST 走 §7.5 的 `/api/v1/<模块前缀>/...`。
 3. 工具名用 `上下文_动作`（`user_login`、`user_register`、`user_me`），避免多上下文冲突。
 4. 入参复用 `client/dto.UserAuthRequest`，出参复用 `client/vo.UserTokenVO`、`vo.UserVO`，MCP 适配器不定义任何 DTO/VO。
 5. 工具最终落到 `application.UserService`，与 HTTP 入口共用同一份用例实现。
 6. 工具 schema 由 DTO 的 `json` / `jsonschema` 标签推导：字段默认可选，必填语义写进字段描述，由业务层校验兜底。
 7. 测试用 SDK 自带的内存传输（`sdk.NewInMemoryTransports` + `Client.Connect`）或 `httptest` + Streamable HTTP 客户端，不依赖数据库。
+
+### 7.4 外部服务与本机资源接入
+
+对接第三方开放平台 API、通过 SMTP 等短连接调用外部服务，或操作本机内存 / 磁盘资源时，都按下面的落位写，不把这类代码塞进 adapter、application 或 util：
+
+| 内容 | 放在哪 | 要求 |
+| --- | --- | --- |
+| 请求内容 / 内存结构 | `infrastructure/do/<通用分类>/<名字>.go` | 一个报文（或一份内存快照）一个文件，只放字段与序列化标签，不含调用逻辑、不建连接、不解析响应 |
+| 调用逻辑 | `infrastructure/repository/<功能>.go` | 组装请求、签名鉴权、超时重试、解析响应、错误归一，实现 application 定义的端口 |
+
+约定：
+
+1. **do 按通用协议/分类命名**：子包只用 `db`、`cache`、`mq`、`http`、`mail`、`rpc` 这类通用分类，
+   不按业务功能建包（禁止 `do/smtp/`、`do/sequence/`、`do/verifycode/`）；报文本身按功能命名，如 `do/mail/verifycode.go`。
+   repository 则按具体实现命名，一个实现一个文件：`repository/smtp.go`（邮件）、`repository/weather.go`（天气 HTTP）、`repository/wechat.go`（微信）、`repository/sequence.go`（内存计数）。
+2. **端口在 application 定义**：发送验证码、推送消息这类技术能力属于 §6.3 的技术能力端口，由使用方 `application` 声明接口（如 `CodeSender`），repository 提供实现，装配在 `cmd/`。
+3. **DO 只描述报文**：字段名与第三方协议对齐，纯数据、无方法逻辑；响应结构需要复用时同样放该分类子包（如 `do/mail/sendresult.go`）。
+4. **短连接必须带 ctx**：HTTP 客户端、SMTP 连接都用调用方传入的 `context.Context` 控制超时与取消，禁止在 repository 里新建 `context.Background()`。
+5. **错误归一**：第三方的状态码、错误码在 repository 内翻译成项目错误（`mago` 全局错误码或 `filex` 这类领域无关错误），上层不解析第三方报文。
+6. **可替换**：同一端口可以有多个实现（SMTP / 短信 / 钉钉），按配置在 `cmd/` 选择注入，application 不改。
+7. **可测试**：repository 用本地假服务验证协议交互（如假 SMTP 服务器断言报文含验证码），不依赖真实第三方账号。
+8. **本机资源同样走 repository + do**：内存缓存、进程内计数器、磁盘文件等本机能力，也要以 `do/<分类>/` 描述结构、
+   `repository/<实现>.go` 承载读写与并发控制；禁止在 application、adapter 或 `util` 里直接开文件、持有全局缓存。
+   端口仍由 `application` 定义，这样换成 Redis / 数据库实现时上层不改（见下方编号计数器示例）。
+9. **不在 infrastructure 下另开文件实现功能**：`infrastructure/` 根目录不建功能文件（如 `infrastructure/password.go`），
+   `util/` 只放无状态纯辅助；任何有逻辑的实现都必须落在 `repository/<实现>.go`，需要结构描述时配 `do/<通用分类>/`。
+
+示例（验证码邮件）：
+
+```go
+// infrastructure/do/mail/verifycode.go
+type VerifyCode struct {
+    From    string
+    To      string
+    Subject string
+    Body    string
+}
+
+// infrastructure/repository/smtp.go
+func (s *SMTP) SendCode(ctx context.Context, email, code string) error {
+    msg := &maildo.VerifyCode{From: s.from(), To: email, Subject: "登录验证码", Body: fmt.Sprintf("您的验证码是 %s", code)}
+
+    return s.send(ctx, msg)
+}
+```
+
+本机资源示例（编号计数器）：规则是**前缀 + 日期 + 当天第几次调用**，如 `Ym202611110001`。
+
+```go
+// infrastructure/do/cache/counter.go：内存快照，只有字段（按通用分类 cache 落位）
+type Counter struct {
+    Date  string // yyyyMMdd
+    Value int64  // 当天已发放数量
+}
+
+// infrastructure/repository/sequence.go：纯内存计数 + 互斥锁，不落盘
+func (s *Sequence) Next(ctx context.Context, prefix string) (string, error) {
+    // 锁内：日期变了就重置当天计数 → 自增 → 拼编号
+    return fmt.Sprintf("%s%s%04d", prefix, today, s.state.Value), nil
+}
+```
+
+约定：
+
+1. 编号跨天自动回到 `0001`；计数只存在内存里，**进程重启或换实例后从 0001 重新开始**，可能重号。
+2. 需要重启不丢、跨实例唯一时，换成 Redis（INCR + 当天过期）或数据库序列实现，端口保持不变。
+3. 并发安全由 repository 内的互斥锁保证；不要在调用方再包锁，也不要放全局变量。
+
+HTTP 类外部查询同理：`do/http/currentweather.go`（请求）、`do/http/currentweatherresult.go`（响应）只描述字段，
+`repository/weather.go` 负责拼 query、带 ctx 超时、限制响应体大小、把非 200 与坏 JSON 归一成错误，
+示例用 open-meteo（免密钥），换成商业天气 API 只改这一个文件。
+
+### 7.5 API 路由与 JSON 字段命名
+
+路由按资源的层级表达，不按动作平铺：
+
+| 类型 | 形状 | 示例 |
+| --- | --- | --- |
+| 集合 | `/api/v1/<模块前缀>/<资源复数>` | `/api/v1/iam/orgUnits` |
+| 单个资源 | `/api/v1/<模块前缀>/<资源复数>/{id}` | `/api/v1/iam/employees/{id}` |
+| 子资源 | `/api/v1/<模块前缀>/<资源复数>/{id}/<子资源复数>` | `/api/v1/iam/employees/{id}/account` |
+| 内部接口 | `/internal/<模块前缀>/...` | `/internal/iam/policyVersions:batch` |
+| 动作（白名单例外） | `/api/v1/<模块前缀>/<资源复数>/{id}/<动作>` | `/api/v1/iam/employees/{id}/leave` |
+
+规则：
+
+1. **资源名一律复数，多词用小驼峰**：`orgUnits`、`policyVersions`、`employees`；
+   禁止 kebab-case 与 snake_case（`/org-units`、`/policy_versions` 都不合法）。
+2. **子资源必须嵌套**：`/employees/{id}/account`；禁止平铺旁路 `/accounts/{id}` —— 旁路会让父资源约束（权限、归属）失效。
+3. **状态变更走 PATCH 资源自身**：`PATCH /employees/{id}`，状态放 body，不建 `/employees/{id}/status` 这类子路径。
+4. **集合替换走子资源 PUT**：`PUT /employees/{id}/roles` 整体替换角色集合；增删单个成员仍走 PATCH 资源自身。
+5. **动作类接口属白名单例外**：`/employees/{id}/leave`、`/users/verify-code` 这类无法用资源表达的写操作，
+   必须在本模块 contracts（`client/api` 的接口注释或同目录 contracts 文件）里显式登记动作名、用途、入参与错误码；
+   未登记的动作路径视为违规，架构评审直接打回。
+6. **内部接口单独前缀**：`/internal/...` 只供内部服务调用，不挂公网网关，不进对外文档。
+
+本仓库示例（用户上下文，模块前缀 `user`）：
+
+| 动作 | 路由 |
+| --- | --- |
+| 注册 | `POST /api/v1/user/users` |
+| 登录（创建会话） | `POST /api/v1/user/sessions` |
+| 发送验证码（动作白名单） | `POST /api/v1/user/users/verify-code` |
+| 查询单个用户 | `GET /api/v1/user/users/{id}` |
+| MCP 协议入口 | `POST /mcp`（协议入口不套资源路由） |
+
+动作白名单登记在 `client/api/contracts.go` 的 `Actions`，`adapter/http/route_test.go` 会校验：未登记又不符资源形状的路由直接失败。
+
+JSON 字段命名：
+
+1. 对外 JSON 字段一律**小驼峰**：`employeeNo`、`orgUnitId`、`createdAt`。
+2. 与库表 `snake_case` 完全解耦：表里是 `employee_no`、`org_unit_id`，由 `do/db` 的 gorm tag 描述列名，
+   `convertor` 层负责 `DO ↔ Entity / VO` 的字段映射；禁止把 snake_case 直接暴露到 API。
+3. DTO/VO 的 `json` 标签必须是小驼峰，且与字段名同义；枚举走 `client/enum` 的字符串字面量（如 `"active"`），
+   不暴露数字码。
+4. 新增字段时先改 `client/dto` 或 `client/vo`，再回到 `convertor` 补映射；三层字段名不一致属于正常现象，
+   不允许为了「省事」把库表列名直接当 JSON 字段。
 
 ---
 
@@ -950,6 +1112,9 @@ type UserResponse struct {
 | Domain Event | `OrderApproved`（`client/api`） |
 
 不需要机械地给所有类型添加 `DTO` 后缀。
+
+字段命名与序列化：对外 JSON 一律小驼峰（`employeeNo`），DTO/VO 的 `json` 标签与字段同义；
+库表列名保持 snake_case（`employee_no`），由 `do/db` 的 gorm tag 描述，字段映射统一在 `convertor` 完成（见 7.5）。
 
 VO 的组装逻辑写在 VO 自己身上，用构造函数或 `FromXxx` 方法，不散写在 application、query 或 adapter 里：
 
@@ -1501,6 +1666,68 @@ internal/
 
 ---
 
+### 16.7 文件命名
+
+Go 文件名默认**全小写、单词直连**，既不写下划线，也不用驼峰：
+
+| 场景 | 写法 | 反例 |
+| --- | --- | --- |
+| 单词名 | `user.go`、`repository.go` | `User.go` |
+| 多词名 | `useraddress.go`、`redisqueue.go` | `user_address.go`、`userAddress.go` |
+| 按层与对象命名 | `adapter/http/user.go`、`client/dto/user.go` | `adapter/http/httpuser.go` |
+
+只有带**特殊语义**的后缀才允许下划线 —— 这是 Go 工具链的识别规则，不是风格选择：
+
+1. 测试文件：`user_test.go`；用 build tag 隔离的联调测试同样保留后缀，如 `livesmtp_test.go`、`liveoss_test.go`（`live` 与功能名直连，不写成 `live_smtp`）。
+2. 构建约束后缀：`_windows.go`、`_linux.go`、`_darwin.go`、`_amd64.go`、`_arm64.go`，Go 按 GOOS/GOARCH 自动取舍。
+3. 其他 Go 约定的特殊文件：`doc.go`（包文档）、`export_test.go`（对外暴露内部符号供测试）。
+
+反向要求：
+
+- 文件名要表达“装什么”，禁止 `utils.go`、`helper.go`、`common.go`、`base.go`、`const.go` 这类没有归属信息的泛名；同一个文件只装一个业务对象或一种明确职责。
+- 不在文件名里重复层信息：包路径已经表达了层与上下文，禁止 `user_service.go`、`user_repository.go`、`user_dto.go` 这类“对象+层”双写。
+- 一个对象一个文件；确实要拆时按业务对象命名（`orderstatus.go`、`orderevent.go`），而不是按文件种类命名。
+
+### 16.8 构造函数与单例
+
+每个 `NewXxx` 都要先判断：**这个对象是否需要进程内唯一**。判断结论必须写进构造函数注释，不要一律加单例，也不要一律不加。
+
+| 场景 | 是否单例 | 理由 |
+| --- | --- | --- |
+| 持有进程内唯一状态（编号计数器、内存缓存、指标聚合） | 是 | 多个实例会各自计数，导致重号或统计分裂 |
+| 创建成本高、需复用连接池（DB、Redis、HTTP client、邮件 client） | 是 | 重复创建会耗尽连接或放大延迟 |
+| 全局配置/日志这类进程级单例 | 是 | 全进程只有一份来源，便于统一开关 |
+| 无状态、可按参数定制（散列、签名、VO 构造、错误包装） | 否 | 单例没有收益，还会挡住并行测试 |
+| 每请求/每用例对象（Service、Controller、Adapter、Migrator） | 否 | 由组合根装配一次并注入，不引入包级全局状态 |
+
+单例写法（并发安全版，推荐 `sync.Once`）：
+
+```go
+var (
+    sequenceInstance *Sequence
+    sequenceOnce     sync.Once
+)
+
+// NewSequence 返回进程内唯一的编号计数器：多实例会各自计数导致重号，故做单例。
+func NewSequence() *Sequence {
+    sequenceOnce.Do(func() {
+        sequenceInstance = &Sequence{}
+    })
+
+    return sequenceInstance
+}
+```
+
+规则：
+
+1. 判据先行：先回答「是否进程内唯一」，再决定写法；结论写进 `NewXxx` 的注释（是单例就写清原因）。
+2. 用 `sync.Once`（或 `init()`）而不是裸 `if ins == nil`：后者在并发首次调用时会创建多个实例。
+3. 单例必须有「测试可隔离」的出口：测试里直接构造 `&Sequence{}` 或用内部构造函数，不走单例入口，避免用例之间互相污染。
+4. 组合根优先于包级单例：能用 `cmd/` 装配一次并注入解决的，不要用包级变量（可测性更好）；只有确实需要「任何调用点都拿到同一份」时才用包级单例。
+5. 包级单例不得持有请求级数据（ctx、用户身份、当前租户），否则并发下会串数据。
+
+---
+
 ## 17. 架构依赖约束
 
 这是所有开发人员和 AI Agent 都必须遵守的约束。
@@ -1513,10 +1740,12 @@ internal/
 | `domain` → `client` | 禁止 | 领域层不认识对外契约 |
 | `application` → `domain` | 允许 | 调用聚合、领域服务与 Gateway 接口 |
 | `infrastructure/repository` → `domain` | 允许 | 实现 domain 定义的 Gateway 接口（写路径） |
+| `domain/gateway` → `domain` | 允许 | 端口子包只引用聚合类型 |
+| `domain/gateway` → `application`/`adapter`/`infrastructure` | 禁止 | 端口只能依赖领域模型与标准库 |
 | `infrastructure/repository` 的读方法 → `client/vo` | 允许 | 直查列并组装视图，不加载聚合 |
 | 一个 `do/` 被两个 repository 引用 | 禁止 | 一个 DO 只对应一个 repository，读写方法都放它身上 |
 | `application` 定义读模型接口 → 同一 repository 实现 | 允许 | 轻量 CQRS 查询路径 |
-| `cmd/` → 任意层 | 允许 | 组合根负责装配，唯一例外 |
+| `cmd/`、`adapter/script` → 任意层 | 允许 | 组合根负责装配；迁移脚本与 cmd 同等，只做装配与触发，不写业务逻辑 |
 | `application` → `adapter` | 禁止 | 用例不能反向依赖适配器 |
 | `application` → `infrastructure` | 禁止 | 用例只能通过 Gateway 接口访问外部 |
 | `domain` → `application` | 禁止 | 领域层不能依赖用例编排 |

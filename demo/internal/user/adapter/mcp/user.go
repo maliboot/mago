@@ -16,6 +16,7 @@ const (
 	ToolLogin    = "user_login"
 	ToolRegister = "user_register"
 	ToolMe       = "user_me"
+	ToolSendCode = "user_send_verify_code"
 
 	serverName    = "mago-user-mcp"
 	serverVersion = "1.0.0"
@@ -28,6 +29,7 @@ type UserMcp struct {
 	server  *sdk.Server
 }
 
+// 非单例：入口适配器，由组合根装配一次。
 func NewUserMcp(service application.UserService) *UserMcp {
 	m := &UserMcp{service: service}
 	m.server = sdk.NewServer(&sdk.Implementation{Name: serverName, Version: serverVersion}, nil)
@@ -61,6 +63,11 @@ func (m *UserMcp) registerTools() {
 		Name:        ToolMe,
 		Description: "按用户 ID（userId）查询用户信息。",
 	}, m.me)
+
+	sdk.AddTool(m.server, &sdk.Tool{
+		Name:        ToolSendCode,
+		Description: "向邮箱发送 6 位登录验证码。",
+	}, m.sendVerifyCode)
 }
 
 // login 复用 HTTP 入口的入参与出参，只做协议映射。
@@ -87,4 +94,11 @@ func (m *UserMcp) me(ctx context.Context, _ *sdk.CallToolRequest, in dto.UserAut
 	}
 
 	return nil, res.Data, nil
+}
+
+// sendVerifyCode 复用 HTTP 入口的入参，成功时没有业务返回值。
+func (m *UserMcp) sendVerifyCode(ctx context.Context, _ *sdk.CallToolRequest, in dto.VerifyCodeRequest) (*sdk.CallToolResult, struct{}, error) {
+	res := m.service.SendVerifyCode(ctx, &in)
+
+	return nil, struct{}{}, res.Error()
 }

@@ -21,6 +21,7 @@ type Conf struct {
 	File      *File                    `yaml:"file"`
 	Redis     *Redis                   `yaml:"redis"`
 	MQTT      *MQTT                    `yaml:"mqtt"`
+	SMTP      *SMTP                    `yaml:"smtp"`
 	Queue     *QueueConf               `yaml:"queue"`
 	Scheduler *Scheduler               `yaml:"scheduler"`
 	Ctx       any

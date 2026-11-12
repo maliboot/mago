@@ -1,4 +1,4 @@
-package util
+package repository
 
 import (
 	"context"
@@ -13,6 +13,7 @@ type Token struct {
 	jwt *config.JWTConf
 }
 
+// 非单例：依赖签发配置，按配置实例化，由组合根创建一次。
 func NewToken(c *config.Conf) *Token {
 	return &Token{jwt: c.Server.Http.JWT["frontend"]}
 }

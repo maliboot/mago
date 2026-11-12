@@ -21,6 +21,7 @@ type User struct {
 	mago.AbstractRepository[db.User]
 }
 
+// 非单例：按配置装配 repository，由组合根创建一次，每上下文共用同一实例。
 func NewUser(c *config.Conf) *User {
 	ins := &User{}
 	ins.Conf = c

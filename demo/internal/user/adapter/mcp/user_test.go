@@ -33,6 +33,14 @@ func (fakeService) Register(context.Context, *dto.UserAuthRequest) *mago.VO[mago
 	return mago.NewVO[mago.EmptyVO](nil, nil)
 }
 
+func (fakeService) SendVerifyCode(_ context.Context, req *dto.VerifyCodeRequest) *mago.VO[mago.EmptyVO] {
+	if req.Email == "" {
+		return mago.NewVO[mago.EmptyVO](mago.NewError(mago.ErrInvalidParams).WithMsg("邮箱不能为空"), nil)
+	}
+
+	return mago.NewVO[mago.EmptyVO](nil, nil)
+}
+
 func (fakeService) Me(context.Context, uint) *mago.VO[vo.UserVO] {
 	return mago.NewVO[vo.UserVO](nil, vo.NewUserVO("a@b.com", enum.UserStatusActive))
 }
@@ -69,14 +77,15 @@ func TestListTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tools/list 失败：%v", err)
 	}
-	if len(res.Tools) != 3 {
-		t.Fatalf("期望 3 个工具，实际 %d", len(res.Tools))
+	if len(res.Tools) != 4 {
+		t.Fatalf("期望 4 个工具，实际 %d", len(res.Tools))
 	}
 
 	want := map[string][]string{
 		ToolLogin:    {"email", "password"},
 		ToolRegister: {"email", "password"},
 		ToolMe:       {"userId"},
+		ToolSendCode: {"email"},
 	}
 	for _, tool := range res.Tools {
 		required, ok := want[tool.Name]
