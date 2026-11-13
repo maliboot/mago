@@ -17,7 +17,7 @@ var resourcePath = regexp.MustCompile(`^/api/v1/user/[a-z][a-zA-Z]*(/:id)?(/[a-z
 
 // TestRoutesFollowContract 校验：每条路由要么是资源形状，要么已登记为动作类接口。
 func TestRoutesFollowContract(t *testing.T) {
-	routes := NewUserController(nil).Routes()
+	routes := NewUserController(nil, nil).Routes()
 	if len(routes) == 0 {
 		t.Fatal("控制器未声明任何路由")
 	}
@@ -43,7 +43,7 @@ func TestRoutesFollowContract(t *testing.T) {
 
 // TestActionsAreRegistered 校验：登记的动作都能对上真实路由，避免契约与实现漂移。
 func TestActionsAreRegistered(t *testing.T) {
-	routes := NewUserController(nil).Routes()
+	routes := NewUserController(nil, nil).Routes()
 
 	for _, action := range api.Actions {
 		found := false

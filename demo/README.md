@@ -106,7 +106,8 @@ demo/
     ├── user/                       # 限界上下文：用户
     │   ├── adapter/                # 入口适配器，按协议分子目录
     │   │   ├── http/
-    │   │   │   └── user.go         # HTTP Controller
+    │   │   │   ├── user.go         # HTTP Controller
+    │   │   │   └── jwt.go          # JWT 扩展：身份键 / 动态校验 / 登录成功响应（装进 config.JWTConf）
     │   │   ├── mcp/
     │   │   │   └── user.go         # MCP 工具声明（协议引擎在 conf/server/mcp.go）
     │   │   ├── mq/
@@ -146,6 +147,7 @@ demo/
     │   │   │   ├── migration.go    # 数据迁移：建表 + 默认种子用户（幂等）
     │   │   │   ├── password.go     # bcrypt 散列（实现 application 的 PasswordHasher）
     │   │   │   ├── token.go        # JWT 签发（实现 application 的 TokenIssuer）
+    │   │   │   ├── verifycode.go   # 邮箱验证码存储（内存实现，实现 application 的 VerifyCodeStore）
     │   │   │   └── queue.go        # 异步任务发布（queuex redis，实现 application 的 TaskQueue）
     │   │   ├── do/                 # 数据对象：按通用协议/分类分子包（db/cache/mq/http/mail/rpc）
     │   │   │   ├── db/
@@ -156,7 +158,8 @@ demo/
     │   │   │   │   ├── currentweather.go        # 天气查询请求报文
     │   │   │   │   └── currentweatherresult.go  # 天气查询响应报文
     │   │   │   └── cache/
-    │   │   │       └── counter.go     # type Counter struct（编号计数内存快照）
+    │   │   │       ├── counter.go     # type Counter struct（编号计数内存快照）
+    │   │   │       └── verifycode.go  # type VerifyCodeRecord struct（验证码内存快照）
     │   │   ├── convertor/          # DO ↔ 领域对象转换
     │   │   │   └── user.go         # UserToEntity / UserToDO
     │   │   └── util/               # 只放无状态纯辅助（类型转换、键拼接），不承载功能逻辑
@@ -954,7 +957,8 @@ HTTP 类外部查询同理：`do/http/currentweather.go`（请求）、`do/http/
 | 动作 | 路由 |
 | --- | --- |
 | 注册 | `POST /api/v1/user/users` |
-| 登录（创建会话） | `POST /api/v1/user/sessions` |
+| 登录（创建会话，账号密码） | `POST /api/v1/user/sessions` |
+| 登录（创建会话，邮箱验证码） | `POST /api/v1/user/sessions/emailCode` |
 | 发送验证码（动作白名单） | `POST /api/v1/user/users/verify-code` |
 | 查询单个用户 | `GET /api/v1/user/users/{id}` |
 | MCP 协议入口 | `POST /mcp`（协议入口不套资源路由） |
@@ -1672,6 +1676,37 @@ MAGO_LIVE_REDIS_URI=redis://127.0.0.1:6379/0 go test -tags queuelive -run TestQu
 go test -tags dblive -run TestDateTimeLive -v -timeout 5m .   # 列类型 / 零值 NULL / 往返 / 自动时间
 go test -tags dblive -run TestTxLive -v -timeout 5m .         # 提交 / 回滚 / 跨仓储共享 / 非事务回退
 ```
+
+---
+
+### 12.5 认证与令牌（JWT）
+
+JWT 中间件在框架 `config.JWTConf`（取法 `c.Server.Http.JWT["<group>"]`），示例工程的签发实现是 `infrastructure/repository/token.go`。
+
+| 关注点 | 规则 |
+| --- | --- |
+| 载荷 | 登录结果（map）**整体**成为 claims：`sub`/`aid`/`ver` 等业务字段随令牌下发，只丢弃 hertz-jwt 自己写的 `exp`/`orig_iat`；结构不规范时用 `jwtConf.SetClaimsBuilder(fn)` 覆盖组装 |
+| 登录方式 | 默认「用户名 + 密码」（`JWTUser.Login`）。其它方式两种挂法：① `JWTUser` 实现 `config.JWTAuthenticator`，由它按请求内容分派（邮箱+验证码 / 手机+短信 / 第三方回调）；② 每种方式一条登录路由，用 `jwtConf.LoginHandlerWith(fn)` 生成，载荷规则、有效期、Cookie、登录响应与 401 包装全部复用默认登录。回调返回 `map` 即载荷；要「同一入口按请求决定时长」（如延长登录）就返回 `config.LoginResult{Claims, TTL}` |
+| 成功响应 | 默认只有 `{token, expire}`。自定义字段两种挂法：`JWTUser` 实现 `config.JWTLoginResponder`（`LoginResponse(ctx, c, token, expireAt, claims)`），或启动期 `jwtConf.SetLoginResponder(fn)` 覆盖；`claims` 是本次令牌的完整载荷，可直接回带 `userId`/`sub`。优先级：`SetLoginResponder` > `JWTLoginResponder` > `ResponseWrapper` |
+| 签发 | `TokenGeneratorWithTTL(claims, ttl)` 按次指定有效期（并发安全）；`TokenGenerator(claims)` 用配置里的 `timeout`；登录入口固定 TTL 用 `LoginHandlerWithTTL(fn, ttl)`，按请求变 TTL 用回调返回 `LoginResult{TTL}`。禁「先 `SetTimeout` 再签发」——那是改共享中间件 |
+| 读取 | handler 里 `jwtConf.Claims(ctx, c)` 取完整载荷、`jwtConf.Identity(ctx, c)` 取身份值；单个载荷值用 `config.ClaimString` / `config.ClaimInt64`（兼容 JSON 数字解出的 `float64`） |
+| 身份校验 | 签发与登录都校验载荷含 `IdentityKey()` 的值，缺身份直接失败；中间件侧身份缺失或 `Validate()` 返回 false 一律拒绝，不再放行空身份 |
+
+约束：
+
+1. 身份键只在 `JWTUser.IdentityKey()` 声明一次，handler 与服务里不要硬编码 `"id"`。
+2. 凭证校验（密码、验证码、三方票据）留在 application/domain；`LoginHandlerWith` 的回调只做参数绑定与错误转换。
+3. `SetTimeout` / `SetMaxRefresh` / `SetSecret` / `SetClaimsBuilder` / `SetLoginResponder` 只允许在启动期调用。
+4. HTTP 的两种登录（账密、邮箱验证码）都走 `LoginHandlerWith` 中间件入口，令牌签发 / 有效期 / 成功响应 / 401 包装统一在框架；application 只校验凭证并返回 `vo.LoginSubjectVO`。非 HTTP 入口（如 MCP 工具 `user_login`）才用 `application.Login` + `TokenIssuer` 自行签发。两条路共用同一个 `JWTConf`（同密钥、同载荷规则），签出的令牌可互认。
+5. `Validate()` 的签名没有 ctx，查库/查缓存的作废逻辑实现 `config.JWTValidator.ValidateIdentity(ctx, identity)`，不要用 `context.Background()`。
+
+示例工程落地（账密 + 邮箱验证码两种登录，照着抄即可）：
+
+1. 入口：`POST /api/v1/user/sessions`（账密）与 `POST /api/v1/user/sessions/emailCode`（验证码）都挂 `jwtConf.LoginHandlerWith(...)`；回调只做绑定 + 调 `UserService.LoginByPassword` / `LoginByEmailCode`，用共用的 `subjectClaims` 组装载荷 `{id, sub, ver}`，返回 `config.LoginResult{Claims, TTL}`。账密的「延长登录」（`X-Iee: true`）就是把 TTL 换成 `ExtendTokenTTL`，不改共享中间件。
+2. 业务：`application.LoginByPassword` / `LoginByEmailCode` 只校验凭证（账密共用私有 `passwordSubject`；验证码用 `VerifyCodeStore.Consume` 核销）并判账号状态，返回 `vo.LoginSubjectVO`（不含令牌）。
+3. 扩展：`adapter/http/jwt.go` 的 `JWTAuth` 实现 `IdentityKey` / `ValidateIdentity` / `LoginResponse`，在 `conf/handler.go` 的 `Bind` 里 `jwtConf.ResetUserConfig(h.jwtAuth)` 装上（必须在取 `MiddlewareFunc()` 之前）。
+4. 响应：`LoginResponse` 用 `mago.NewResponse(c).Success(...)` 返回 `{token, expire, userId, email, tokenVersion}`，两种登录同一形状，字段按前端契约定。
+5. 存储：验证码走 `infrastructure/repository/verifycode.go`（**内存单副本，仅 demo**：多副本 / 重启 / 防爆破都不满足，生产必须换 Redis 或数据库，只改 `conf/provider.go` 的 `provideVerifyCodeStore` 一行，端口与用例不变）。
 
 ---
 

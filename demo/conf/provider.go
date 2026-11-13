@@ -46,3 +46,13 @@ func provideCodeSender(s *repository.SMTP) application.CodeSender {
 func provideTaskQueue(q *repository.Queue) application.TaskQueue {
 	return q
 }
+
+// provideVerifyCodeStore 把内存验证码存储绑定到 application 的校验端口（换 Redis 只改这一行）。
+func provideVerifyCodeStore(v *repository.VerifyCode) application.VerifyCodeStore {
+	return v
+}
+
+// provideFrontendJWT 只暴露 frontend 这一组 JWT 配置：登录入口需要它签发令牌（§12.5）。
+func provideFrontendJWT(c *config.Conf) *config.JWTConf {
+	return c.Server.Http.JWT["frontend"]
+}

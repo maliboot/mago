@@ -20,18 +20,19 @@
 | `conf/wire.go` | 依赖图：`//go:build wireinject` + `InitHandler(c *config.Conf) (*Handler, error)` 里的 `wire.Build(...)`；文件里只放这一个函数（§11.5） |
 | `conf/wire_gen.go` | wire 生成物（`!wireinject`），入库、禁手改；改 provider 后必须重跑 `go tool wire ./conf` |
 | `conf/provider.go` | 桥接 provider：子配置切片（`provideSMTPConf`）、端口绑定（`provideUserGateway`/`provideUserQuery`/`providePasswordHasher`/`provideTokenIssuer`/`provideCodeSender`），函数体只 return，不写逻辑 |
-| `conf/handler.go` | `Handler`（wire 用 `wire.Struct` 填充，同包未导出字段）+ `Bind(hs *mago.Http, mcpSrv *server.McpServer, c *config.Conf)` 挂 controller 路由与 `/mcp` + `McpRegistrars() []server.ToolRegistrar` 给 MCP 引擎供工具清单；只挂不 new |
+| `conf/handler.go` | `Handler`（wire 用 `wire.Struct` 填充，同包未导出字段）+ `Bind(hs *mago.Http, mcpSrv *server.McpServer, c *config.Conf)` 挂 controller 路由与 `/mcp` + `McpRegistrars() []server.ToolRegistrar` 给 MCP 引擎供工具清单；只挂不 new；`Bind` 里先 `jwtConf.ResetUserConfig(h.jwtAuth)` 装业务扩展（身份键/动态校验/登录响应），再取 `MiddlewareFunc()`（§12.5） |
 | `conf/server/mcp.go` | MCP **协议引擎**：`McpServer`（`sdk.Server` + Streamable HTTP handler）、`ToolRegistrar` 接口、`NewMcpServer(c, registrars...)`（元信息取 `app_name`）；不写任何工具定义（§7.3） |
 | `conf/server/http.go` | `NewHttpServer(c)`：hertz server + 通用中间件（access log / request id / recovery / static / ping）+ `TenantJwtInit`，不含业务路由（§11.2） |
 | `conf/server/queue.go` | `TaskRegistrar` 接口 + `NewQueueServer(c, registrars...)`：初始化队列服务（优先 redis）并把各上下文任务注册上去；未配置返回 nil |
 | `conf/server/mqtt.go` `copool.go` | `NewMQTTServer` / `NewCoPool`：入参 `*config.Conf`，只有「读配置 → 调框架构造函数 → 返回」；未启用返回 nil |
 | `conf/conf.go` | 业务自定义配置 `Conf` + `New(c) (*Conf, error)`：从同一份 `conf.yml` 解码（`c.Scan`），不再有包级单例；无消费方时不要塞进 wire 图 |
 | `conf/middleware/print.go` | 自定义 hertz 中间件：`func Xxx() app.HandlerFunc`，横切后 `ctx.Next(c)`，不碰业务 |
-| `adapter/http/user.go` | HTTP 入口 `UserController`：绑定、校验、回写；路由 `POST /api/v1/user/users`、`POST /api/v1/user/sessions`、`POST /api/v1/user/users/verify-code`、`GET /api/v1/user/users/:id`；`route_test.go` 校验路由契约 |
+| `adapter/http/user.go` | HTTP 入口 `UserController`：绑定、校验、回写；路由 `POST /api/v1/user/users`、`POST /api/v1/user/sessions`、`POST /api/v1/user/sessions/emailCode`、`POST /api/v1/user/users/verify-code`、`GET /api/v1/user/users/:id`；账密与邮箱验证码两种登录都挂 `jwtConf.LoginHandlerWith(...)`，回调返回 `config.LoginResult{Claims, TTL}`（账密 `X-Iee: true` 时换 `ExtendTokenTTL`）；`route_test.go` 校验路由契约，`session_test.go` 跑两种登录的「登录→带令牌访问」全链路 |
+| `adapter/http/jwt.go` | JWT 业务扩展 `JWTAuth`：`IdentityKey` / `ValidateIdentity`（带 ctx 动态作废）/ `LoginResponse`（自定义成功响应字段）/ 401 与成功响应包装；由 `conf/handler.go` 装进 `config.JWTConf`（§12.5） |
 | `adapter/mq/user.go` | MQ 任务声明 `UserConsumer`：`RegisterTasks` 注册 `constant.TaskUserRegistered`（`user_registered`）处理器，`handleUserRegistered` 解析 `dto.UserRegisteredEvent`（demo 只落日志） |
 | `adapter/mcp/user.go` | MCP **工具声明** `UserMcp`：`RegisterTools(srv *sdk.Server)` 注册 `user_login`、`user_register`、`user_me`、`user_send_verify_code`，复用同一 dto/vo/service；不自建引擎、不提供 Handler（§7.3） |
-| `application/user.go` | `UserService`（Login/Register/Me/SendVerifyCode）、读端口 `UserQuery`、实现 `userService`、装配入口 `NewUserService` |
-| `application/port.go` | 技术能力端口：`PasswordHasher`、`TokenIssuer`、`CodeSender`（消费方定义） |
+| `application/user.go` | `UserService`（Login/LoginByPassword/LoginByEmailCode/Register/Me/SendVerifyCode）、读端口 `UserQuery`、实现 `userService`、装配入口 `NewUserService`；HTTP 登录用 LoginByPassword/LoginByEmailCode（只校验返回登录主体），MCP 等非 HTTP 入口用 Login（自签令牌）；常量 `DefaultTokenTTL`/`ExtendTokenTTL`/`verifyCodeTTL` |
+| `application/port.go` | 技术能力端口：`PasswordHasher`、`TokenIssuer`、`CodeSender`、`VerifyCodeStore`（保存/核销验证码）、`TaskQueue`（消费方定义） |
 | `application/impl_test.go` | 全项目唯一的接口断言（`api.UserService`） |
 | `client/api/user.go` | 跨上下文调用契约 |
 | `client/api/contracts.go` | 动作类接口白名单 `Actions`（未登记的动作路径视为违规） |
@@ -46,7 +47,8 @@
 | `infrastructure/repository/user.go` | 该 DO **唯一** repository：写实现 `UserGateway`，读实现 `UserQuery.ByID`（直查列 → VO） |
 | `infrastructure/repository/smtp.go` | 第三方/短连接调用逻辑（SMTP 发验证码），实现 application 的 `CodeSender` |
 | `infrastructure/repository/password.go` | bcrypt 散列，实现 application 的 `PasswordHasher` |
-| `infrastructure/repository/token.go` | JWT 签发，实现 application 的 `TokenIssuer` |
+| `infrastructure/repository/token.go` | JWT 签发，实现 application 的 `TokenIssuer`（`TokenGeneratorWithTTL` 按次指定有效期） |
+| `infrastructure/repository/verifycode.go` | 邮箱验证码存储（内存 + TTL + 一次性核销，实现 `VerifyCodeStore`）；多副本换 Redis 只改 `conf/provider.go` 桥接 |
 | `infrastructure/repository/migration.go` | 数据迁移：AutoMigrate 建表 + 默认种子用户「张三」（幂等，已存在则跳过且不覆盖密码） |
 | `adapter/script/seeduser/main.go` | 迁移入口脚本：`cd demo && go run ./internal/user/adapter/script/seeduser -f ./conf.yml` |
 | `infrastructure/repository/queue.go` | 异步任务发布（`queuex` redis，实现 application 的 `TaskQueue`；`conf.Queue.GetClient()` 取客户端） |
@@ -55,6 +57,7 @@
 | `infrastructure/do/http/currentweather.go` / `currentweatherresult.go` | 天气查询的请求 / 响应报文 DO（按通用分类 `http`） |
 | `infrastructure/repository/sequence.go` | 本机编号计数器：纯内存计数 + 互斥锁（不落盘），编号 = 前缀 + yyyyMMdd + 4 位当天序号 |
 | `infrastructure/do/cache/counter.go` | 计数内存快照 DO（Date/Value），按通用分类 `cache` 落位 |
+| `infrastructure/do/cache/verifycode.go` | 验证码内存快照 DO（Code/ExpireAt），按通用分类 `cache` 落位 |
 | `infrastructure/do/mail/verifycode.go` | 邮件报文 DO（按通用分类 `mail` 落位，只放字段） |
 | `infrastructure/convertor/user.go` | DO ↔ Entity / VO |
 | `infrastructure/do/db/user.go` | 表结构 DO（`TableName() = "user"`） |
@@ -87,6 +90,7 @@
 | 外部服务封装 | 第三方开放平台、SMTP 等短连接，以及本机内存/磁盘操作：结构放 `infrastructure/do/<通用分类>/`（db/cache/mq/http/mail/rpc，禁按业务功能建包），读写与并发逻辑放 `infrastructure/repository/<实现>.go`，一个实现一个文件（§7.4） |
 | 定时任务与队列 | 定时任务：对多副本无副作用的优先 `helper.Cron(ctx, cronName, interval, task)`（`helper/corn.go`，进程内 ticker，勿改名）；有副作用（发券/扣款/通知/流水号）必须入队（`dispatcher.TaskID` 去重）或加分布式锁，并在注释说明为何不重复。消息队列：优先 `queuex/redisq`（`queue.default: redis` + `queue.redis.dsn`，装配在 `conf/server/queue.go`），业务只依赖 `queuex.Server`/`queuex.Client`；sqlite 队列只用于单实例/本地；禁绕过 queuex 直接 import `asynq`/`kafka-go`/`nsq`。demo 落地：任务名 `client/constant.TaskUserRegistered`、载荷 `client/dto.UserRegisteredEvent`、发布 `repository/queue.go`（实现 `application.TaskQueue`）、消费 `adapter/mq/user.go`、装配 `conf/server/queue.go` + `Handler.TaskRegistrars()`、配置 `queue.default: redis`（§12.3、§16.6） |
 | 依赖选型 | 协议/功能/开放平台接入按优先级取第一个可用方案：标准库 → mago 仓库组件 → 社区官方库 → 高热度且仍在维护的库 → 自己实现；跳级要写理由（§16.6） |
+| 认证与令牌 | 载荷＝登录结果 map 整体透传（`sub`/`aid`/`ver` 随令牌下发，只丢 `exp`/`orig_iat`），结构特殊用 `jwtConf.SetClaimsBuilder`；登录方式默认账密（`JWTUser.Login`），邮箱/短信/三方用 `JWTUser` 实现 `config.JWTAuthenticator` 或每种方式一条 `jwtConf.LoginHandlerWith(fn)` / `LoginHandlerWithTTL(fn, ttl)` 路由（回调返回 map 即载荷，按请求变 TTL 返回 `config.LoginResult{Claims, TTL}`）；成功响应字段默认只有 `{token, expire}`，自定义用 `JWTUser` 实现 `config.JWTLoginResponder` 或启动期 `jwtConf.SetLoginResponder(fn)`（优先级：setter > 接口 > `ResponseWrapper`）；签发用 `TokenGeneratorWithTTL(claims, ttl)`（禁先 `SetTimeout` 再签发，那会改共享中间件）；读取用 `jwtConf.Claims`/`jwtConf.Identity`；带 ctx 的动态作废实现 `config.JWTValidator.ValidateIdentity`；签发与登录都校验身份键存在（§12.5） |
 | 文件命名 | Go 文件名默认全小写、单词直连（`useraddress.go`）；下划线只留给 `_test`、`_windows`、`_linux` 等特殊后缀，禁 `utils.go`、`helper.go`、`user_service.go`（§16.7） |
 | 目录禁区 | 不建 `docs/`、`migrations/`、`pkg/`、全局 `utils/`；迁移与修数脚本放 `internal/<ctx>/adapter/script/`（§2.3） |
 
@@ -110,6 +114,7 @@
 | 加定时任务 | `helper.Cron(ctx, "<ctx>.<动作>", interval, fn)`（多副本重复执行无副作用才用）；有副作用改走队列 + `dispatcher.TaskID` 去重，并在注释说明（§12.3） |
 | 加异步任务 | 任务名 const 放 `client/constant`（adapter 与 application 共享）、载荷放 `client/dto` → 发布端口 `application.TaskQueue`（实现 `repository/queue.go`，`dispatcher.NewTask(..., dispatcher.TaskID(...))` + `EnqueueContext`）→ 消费 `adapter/mq/<ctx>.go` 的 `RegisterTasks` + `queueSrv.RegisterHandleFunc` → `Handler.TaskRegistrars()` 带上；队列实现 `queuex/redisq`（§12.3） |
 | 加业务配置项 | `conf/conf.go` 的 `Conf` 加字段（`yaml` 标签）→ 同一份 `conf.yml` 补键 → `New(c)` 返回值由 wire 注入给使用方；不改框架 `config.Conf`、不新开配置文件（§11.2） |
+| 加一种登录方式（邮箱验证码/短信/第三方） | `JWTUser` 实现 `config.JWTAuthenticator`（同一入口内按请求分派），或每种方式一条路由用 `jwtConf.LoginHandlerWith(fn)` / `LoginHandlerWithTTL(fn, ttl)` 挂载（按请求变 TTL 让回调返回 `config.LoginResult{Claims, TTL}`）；凭证校验放 application/domain（只返回登录主体），令牌载荷照常透传 claims；登录成功要带更多字段就实现 `JWTLoginResponder` 或用 `SetLoginResponder`（§12.5） |
 
 ## 5. 校验命令
 
@@ -162,7 +167,7 @@ cd internal/user/infrastructure/repository && /usr/local/go/bin/go test -tags qu
 - [DTO 与 Model 命名](README.md#9-dto-与-model-命名规范)
 - [跨 Bounded Context 通信](README.md#10-跨-bounded-context-通信)：client/api 契约
 - [启动装配](README.md#11-启动装配与依赖注入)：11.1 cmd/ 进程入口与 NewApp（形参禁 adapter 实例）、11.2 conf/ 装配层（Handler.Bind/Server/中间件/自定义配置）、11.3 构造函数注入与装配顺序、11.4 DI 规则、11.5 wire 装配（provider/桥接/生成物）
-- [跨上下文技术能力](README.md#12-跨上下文技术能力)：12.3 定时任务（helper.Cron）与消息队列（queuex/redisq，demo 已接 redis 队列）、12.4 时间字段 DateTime（GormDataType="time"、秒精度、真库联调）
+- [跨上下文技术能力](README.md#12-跨上下文技术能力)：12.3 定时任务（helper.Cron）与消息队列（queuex/redisq，demo 已接 redis 队列）、12.4 时间字段 DateTime（GormDataType="time"、秒精度、真库联调）、12.5 认证与令牌 JWT（载荷透传 claims、JWTAuthenticator/LoginHandlerWith 多登录方式、成功响应自定义、TokenGeneratorWithTTL、JWTValidator 动态作废）
 - [错误处理](README.md#13-错误处理)：13.1 domain / 13.2 application / 13.4 原则
 - [事务管理](README.md#14-事务管理)：14.1 事务规则、14.2 事务写法（AbstractRepository.WithTransaction / TxDB，跨仓储共享）
 - [测试策略](README.md#15-测试策略)

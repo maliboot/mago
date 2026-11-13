@@ -30,16 +30,21 @@ func InitHandler(c *config.Conf) (*Handler, error) {
 	smtp := provideSMTPConf(c)
 	repositorySMTP := repository.NewSMTP(smtp)
 	codeSender := provideCodeSender(repositorySMTP)
+	verifyCode := repository.NewVerifyCode()
+	verifyCodeStore := provideVerifyCodeStore(verifyCode)
 	queue := repository.NewQueue(c)
 	taskQueue := provideTaskQueue(queue)
-	userService := application.NewUserService(userGateway, userQuery, passwordHasher, tokenIssuer, codeSender, taskQueue)
-	userController := http.NewUserController(userService)
+	userService := application.NewUserService(userGateway, userQuery, passwordHasher, tokenIssuer, codeSender, verifyCodeStore, taskQueue)
+	jwtConf := provideFrontendJWT(c)
+	userController := http.NewUserController(userService, jwtConf)
+	jwtAuth := http.NewJWTAuth(userService)
 	userMcp := mcp.NewUserMcp(userService)
 	userConsumer := mq.NewUserConsumer()
 	handler := &Handler{
-		user: userController,
-		mcp:  userMcp,
-		mq:   userConsumer,
+		user:    userController,
+		jwtAuth: jwtAuth,
+		mcp:     userMcp,
+		mq:      userConsumer,
 	}
 	return handler, nil
 }

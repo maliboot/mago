@@ -30,6 +30,28 @@ func (fakeService) Login(_ context.Context, req *dto.UserAuthRequest) *mago.VO[v
 	return mago.NewVO[vo.UserTokenVO](nil, vo.NewUserTokenVO("token-1", "2026-11-10 12:00:00"))
 }
 
+func (fakeService) LoginByPassword(_ context.Context, req *dto.UserAuthRequest) *mago.VO[vo.LoginSubjectVO] {
+	if req.Password != "secret" {
+		return mago.NewVO[vo.LoginSubjectVO](
+			mago.NewError(mago.ErrAuthLoginFailed).WithMsg("用户不存在或密码错误"),
+			nil,
+		)
+	}
+
+	return mago.NewVO[vo.LoginSubjectVO](nil, vo.NewLoginSubjectVO(1, req.Email, 1))
+}
+
+func (fakeService) LoginByEmailCode(_ context.Context, req *dto.EmailCodeLoginRequest) *mago.VO[vo.LoginSubjectVO] {
+	if req.Code != "secret" {
+		return mago.NewVO[vo.LoginSubjectVO](
+			mago.NewError(mago.ErrAuthLoginFailed).WithMsg("验证码错误或已过期"),
+			nil,
+		)
+	}
+
+	return mago.NewVO[vo.LoginSubjectVO](nil, vo.NewLoginSubjectVO(1, req.Email, 1))
+}
+
 func (fakeService) Register(context.Context, *dto.UserAuthRequest) *mago.VO[mago.EmptyVO] {
 	return mago.NewVO[mago.EmptyVO](nil, nil)
 }

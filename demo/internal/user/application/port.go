@@ -19,6 +19,16 @@ type CodeSender interface {
 	SendCode(ctx context.Context, email, code string) error
 }
 
+// VerifyCodeStore 保存与核销邮箱验证码；由 infrastructure 的内存或 Redis 实现提供。
+// 与 CodeSender 分开：发得出去不等于存得住，两者可以各自替换（§7.4）。
+// ⚠️ demo 默认注入的是内存单副本实现（repository.VerifyCode），仅供本地联调；
+// 生产必须换 Redis / 数据库实现（多副本共享、重启不丢、可加错误次数上限），
+// 只改组合根 conf/provider.go 的 provideVerifyCodeStore 一行，本端口与用例不变。
+type VerifyCodeStore interface {
+	Save(ctx context.Context, email, code string, ttl time.Duration) error
+	Consume(ctx context.Context, email, code string) (bool, error)
+}
+
 // TokenIssuer 是访问令牌签发能力端口，由 infrastructure 实现。
 // 令牌不是领域概念（JWT、有效期策略属于认证基础设施），domain 不需要认识它。
 type TokenIssuer interface {

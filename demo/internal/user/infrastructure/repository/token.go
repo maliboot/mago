@@ -23,8 +23,7 @@ func (t *Token) Issue(_ context.Context, subject string, expire time.Duration) (
 		return "", time.Time{}, mago.NewError(mago.ErrServerError)
 	}
 
-	t.jwt.SetTimeout(expire)
-	t.jwt.SetMaxRefresh(expire)
-
-	return t.jwt.TokenGenerator(map[string]interface{}{"id": subject})
+	// 按次指定有效期签发：不同调用方（后台长令牌、移动端短令牌）各用各的 TTL，
+	// 不要用 SetTimeout 改共享中间件，那样会改到并发中的其它请求。
+	return t.jwt.TokenGeneratorWithTTL(map[string]interface{}{"id": subject}, expire)
 }

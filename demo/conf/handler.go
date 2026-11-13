@@ -14,15 +14,21 @@ import (
 // Handler 汇总所有上下文的入口 handler（HTTP controller + MCP 工具声明 + MQ 任务声明），
 // 由 wire 装配后注入组合根。它只持有 adapter 实例：不构造协议引擎、不启动、不写业务。
 type Handler struct {
-	user *userhttp.UserController
-	mcp  *usermcp.UserMcp
-	mq   *usermq.UserConsumer
+	user    *userhttp.UserController
+	jwtAuth *userhttp.JWTAuth
+	mcp     *usermcp.UserMcp
+	mq      *usermq.UserConsumer
 }
 
 // Bind 接收 server engine，把各上下文的路由与协议入口挂上去；新增上下文只改这里。
 func (h *Handler) Bind(hs *mago.Http, mcpSrv *server.McpServer, c *config.Conf) {
+	// JWT 中间件的业务扩展由本上下文提供：身份键、动态作废与登录成功响应（§12.5）。
+	// 必须在取 MiddlewareFunc() 之前替换，否则会挂到 autoloadx 的占位 Tenant 实现上。
+	jwtConf := c.Server.Http.JWT["frontend"]
+	jwtConf.ResetUserConfig(h.jwtAuth)
+
 	v1 := hs.Group("/api/v1/user")
-	authed := v1.Group("", c.Server.Http.JWT["frontend"].MiddlewareFunc())
+	authed := v1.Group("", jwtConf.MiddlewareFunc())
 
 	h.user.Router(v1, authed)
 

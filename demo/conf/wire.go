@@ -20,6 +20,7 @@ func InitHandler(c *config.Conf) (*Handler, error) {
 	wire.Build(
 		// 子配置切片：provider 只暴露使用方真正需要的那一段配置
 		provideSMTPConf,
+		provideFrontendJWT,
 
 		// infrastructure：一个 DO 一个 repository，读写端口都由它实现
 		repository.NewUser,
@@ -29,16 +30,19 @@ func InitHandler(c *config.Conf) (*Handler, error) {
 		repository.NewToken,
 		repository.NewSMTP,
 		repository.NewQueue,
+		repository.NewVerifyCode,
 
 		// application：技术端口由使用方定义，实现由 infrastructure 注入
 		providePasswordHasher,
 		provideTokenIssuer,
 		provideCodeSender,
+		provideVerifyCodeStore,
 		provideTaskQueue,
 		application.NewUserService,
 
 		// adapter：HTTP 与 MCP 共用同一个 Service 实例
 		userhttp.NewUserController,
+		userhttp.NewJWTAuth,
 		usermcp.NewUserMcp,
 		usermq.NewUserConsumer,
 
