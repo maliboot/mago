@@ -1,4 +1,4 @@
-package repository
+package util
 
 import (
 	"context"
@@ -6,7 +6,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Password 是 domain.PasswordHasher 的 bcrypt 实现。
+// Password 是 application.PasswordHasher 的 bcrypt 实现。
+// 无 DO 的纯工具类：无状态纯计算，不操作任何数据对象，按 README §18.6 放 util/，不占 repository/。
 type Password struct{}
 
 // 非单例：无状态纯实现，随手构造即可，做成单例没有收益。

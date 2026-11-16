@@ -15,18 +15,6 @@ import (
 	"tests/internal/user/client/vo"
 )
 
-// Route 描述本控制器的一条路由，集中声明便于契约测试校验路径形状。
-type Route struct {
-	// Method 是 HTTP 方法。
-	Method string
-	// Path 是相对上下文分组（/api/v1/user）的路径。
-	Path string
-	// Authed 为真时挂在需要 JWT 的分组上。
-	Authed bool
-	// Handler 是处理函数。
-	Handler app.HandlerFunc
-}
-
 // UserController 是用户上下文的 HTTP 入口，只做协议转换，业务规则在 application / domain。
 // 两种登录都交给 JWTConf 登录中间件：凭证校验在 application，令牌签发 / 有效期 / 成功响应 / 401 包装统一在框架（§12.5）。
 type UserController struct {

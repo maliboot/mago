@@ -6,6 +6,7 @@ import (
 	"tests/internal/user/application"
 	"tests/internal/user/domain"
 	"tests/internal/user/infrastructure/repository"
+	"tests/internal/user/infrastructure/util"
 )
 
 // 本文件只放「无法直接作为 provider 使用」的桥接函数：类型转换、子配置切片、端口绑定。
@@ -27,13 +28,13 @@ func provideUserQuery(u *repository.User) application.UserQuery {
 	return u
 }
 
-// providePasswordHasher 把 infrastructure 的散列实现绑定到 application 的技术端口。
-func providePasswordHasher(p *repository.Password) application.PasswordHasher {
+// providePasswordHasher 把无 DO 的纯工具散列实现（util，§18.6）绑定到 application 的技术端口。
+func providePasswordHasher(p *util.Password) application.PasswordHasher {
 	return p
 }
 
-// provideTokenIssuer 把 infrastructure 的签发实现绑定到 application 的技术端口。
-func provideTokenIssuer(t *repository.Token) application.TokenIssuer {
+// provideTokenIssuer 把无 DO 的纯工具签发实现（util，§18.6）绑定到 application 的技术端口。
+func provideTokenIssuer(t *util.Token) application.TokenIssuer {
 	return t
 }
 

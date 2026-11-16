@@ -159,3 +159,36 @@ func TestDomainModelFilesDeclareStruct(t *testing.T) {
 		}
 	}
 }
+
+// TestOneStructPerFile 校验 §18.1：一个文件一个核心 struct（参考 Java 一文件一类）。
+// 每个非测试 Go 文件至多声明一个 struct；工具类文件可以没有 struct，多个核心 struct 必须拆多文件。
+func TestOneStructPerFile(t *testing.T) {
+	for _, file := range goFilesIn(t, ".") {
+		fset := token.NewFileSet()
+		parsed, err := parser.ParseFile(fset, file, nil, 0)
+		if err != nil {
+			t.Fatalf("解析 %s 失败：%v", file, err)
+		}
+
+		var names []string
+		for _, decl := range parsed.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				ts, ok := spec.(*ast.TypeSpec)
+				if !ok {
+					continue
+				}
+				if _, isStruct := ts.Type.(*ast.StructType); isStruct {
+					names = append(names, ts.Name.Name)
+				}
+			}
+		}
+
+		if len(names) > 1 {
+			t.Errorf("%s 声明了 %d 个 struct（%s）：一个文件一个核心 struct（§18.1），请拆分为多文件", file, len(names), strings.Join(names, ", "))
+		}
+	}
+}

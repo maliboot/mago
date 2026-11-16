@@ -12,6 +12,7 @@ import (
 	usermq "tests/internal/user/adapter/mq"
 	"tests/internal/user/application"
 	"tests/internal/user/infrastructure/repository"
+	"tests/internal/user/infrastructure/util"
 )
 
 // InitHandler 是组合根唯一的注入入口：wire 按类型把配置与四层实现装配成 Handler。
@@ -26,8 +27,8 @@ func InitHandler(c *config.Conf) (*Handler, error) {
 		repository.NewUser,
 		provideUserGateway,
 		provideUserQuery,
-		repository.NewPassword,
-		repository.NewToken,
+		util.NewPassword, // 无 DO 的纯工具类（§18.6）
+		util.NewToken,
 		repository.NewSMTP,
 		repository.NewQueue,
 		repository.NewVerifyCode,

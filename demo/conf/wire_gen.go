@@ -13,6 +13,7 @@ import (
 	"tests/internal/user/adapter/mq"
 	"tests/internal/user/application"
 	"tests/internal/user/infrastructure/repository"
+	"tests/internal/user/infrastructure/util"
 )
 
 // Injectors from wire.go:
@@ -23,9 +24,9 @@ func InitHandler(c *config.Conf) (*Handler, error) {
 	user := repository.NewUser(c)
 	userGateway := provideUserGateway(user)
 	userQuery := provideUserQuery(user)
-	password := repository.NewPassword()
+	password := util.NewPassword()
 	passwordHasher := providePasswordHasher(password)
-	token := repository.NewToken(c)
+	token := util.NewToken(c)
 	tokenIssuer := provideTokenIssuer(token)
 	smtp := provideSMTPConf(c)
 	repositorySMTP := repository.NewSMTP(smtp)

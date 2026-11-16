@@ -1,4 +1,4 @@
-package repository
+package util
 
 import (
 	"context"
@@ -8,7 +8,8 @@ import (
 	"github.com/maliboot/mago/config"
 )
 
-// Token 是 domain.TokenIssuer 的 JWT 实现，技术细节（hertz JWT 中间件、配置）都收在这里。
+// Token 是 application.TokenIssuer 的 JWT 实现，技术细节（hertz JWT 中间件、配置）都收在这里。
+// 无 DO 的纯工具类：只封装签发配置，不操作任何数据对象，按 README §18.6 放 util/，不占 repository/。
 type Token struct {
 	jwt *config.JWTConf
 }

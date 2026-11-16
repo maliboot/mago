@@ -28,6 +28,7 @@
 | `conf/conf.go` | 业务自定义配置 `Conf` + `New(c) (*Conf, error)`：从同一份 `conf.yml` 解码（`c.Scan`），不再有包级单例；无消费方时不要塞进 wire 图 |
 | `conf/middleware/print.go` | 自定义 hertz 中间件：`func Xxx() app.HandlerFunc`，横切后 `ctx.Next(c)`，不碰业务 |
 | `adapter/http/user.go` | HTTP 入口 `UserController`：绑定、校验、回写；路由 `POST /api/v1/user/users`、`POST /api/v1/user/sessions`、`POST /api/v1/user/sessions/emailCode`、`POST /api/v1/user/users/verify-code`、`GET /api/v1/user/users/:id`；账密与邮箱验证码两种登录都挂 `jwtConf.LoginHandlerWith(...)`，回调返回 `config.LoginResult{Claims, TTL}`（账密 `X-Iee: true` 时换 `ExtendTokenTTL`）；`route_test.go` 校验路由契约，`session_test.go` 跑两种登录的「登录→带令牌访问」全链路 |
+| `adapter/http/route.go` | 路由声明 `Route{Method, Path, Authed, Handler}`（一文件一核心 struct，§18.1）；`UserController.Routes()` 返回本上下文路由表，供 `Bind` 挂载与 `route_test.go` 校验路径形状 |
 | `adapter/http/jwt.go` | JWT 业务扩展 `JWTAuth`：`IdentityKey` / `ValidateIdentity`（带 ctx 动态作废）/ `LoginResponse`（自定义成功响应字段）/ 401 与成功响应包装；由 `conf/handler.go` 装进 `config.JWTConf`（§12.5） |
 | `adapter/mq/user.go` | MQ 任务声明 `UserConsumer`：`RegisterTasks` 注册 `constant.TaskUserRegistered`（`user_registered`）处理器，`handleUserRegistered` 解析 `dto.UserRegisteredEvent`（demo 只落日志） |
 | `adapter/mcp/user.go` | MCP **工具声明** `UserMcp`：`RegisterTools(srv *sdk.Server)` 注册 `user_login`、`user_register`、`user_me`、`user_send_verify_code`，复用同一 dto/vo/service；不自建引擎、不提供 Handler（§7.3） |
@@ -36,20 +37,25 @@
 | `application/impl_test.go` | 全项目唯一的接口断言（`api.UserService`） |
 | `client/api/user.go` | 跨上下文调用契约 |
 | `client/api/contracts.go` | 动作类接口白名单 `Actions`（未登记的动作路径视为违规） |
-| `client/dto/user.go` | 入参 `UserAuthRequest`（HTTP 与 MCP 共用一套） |
-| `client/dto/userregistered.go` | 队列载荷 `UserRegisteredEvent`（生产与消费共用契约） |
-| `client/vo/user.go` | 出参 `UserTokenVO`、`UserVO`，含 `NewXxxVO` 构造与 DO/Entity → VO 转换 |
+| `client/dto/userauthrequest.go` | 入参 `UserAuthRequest`（HTTP 与 MCP 共用一套），嵌入 `mago.AbstractDTO`（§18.5） |
+| `client/dto/emailcodeloginrequest.go` | 入参 `EmailCodeLoginRequest`（邮箱 + 验证码登录），嵌入 `mago.AbstractDTO`；一文件一类型（§18.1） |
+| `client/dto/verifycoderequest.go` | 入参 `VerifyCodeRequest`（发送验证码），嵌入 `mago.AbstractDTO`；一文件一类型（§18.1） |
+| `client/dto/userregistered.go` | 队列载荷 `UserRegisteredEvent`（生产与消费共用契约），嵌入 `mago.AbstractDTO`；外层 `UserID` 遮蔽基类字段，JSON 契约不变 |
+| `client/vo/usertokenvo.go` | 出参 `UserTokenVO`（token/expire），嵌入 `mago.AbstractViewObject`，含 `NewUserTokenVO`（§18.5） |
+| `client/vo/loginsubjectvo.go` | 出参 `LoginSubjectVO`（登录主体，JWT 载荷来源），嵌入 `mago.AbstractViewObject`；一文件一类型（§18.1） |
+| `client/vo/uservo.go` | 出参 `UserVO`（当前用户视图），嵌入 `mago.AbstractViewObject`，含 `NewUserVO` |
+| `client/vo/migrationresultvo.go` | 迁移结果 `MigrationResultVO`（repository 产出 → adapter/script 消费，跨层共用落 client，§18.7），嵌入 `mago.AbstractViewObject` |
 | `client/constant/task.go` | adapter 与 application 共享的常量（队列任务名 `TaskUserRegistered` 等）；两侧 import 同一份，禁各复制一份 |
 | `client/enum/user.go` | 对外枚举 `UserStatus`（string 字面量 `active`/`disabled`） |
 | `client/error.go` | 上下文错误码扩展（`ErrUserDisabled=401501`、`ErrEmailTaken=422101`） |
 | `domain/user.go` | 聚合 `User`（只有聚合根时直接单文件，不建目录；见 §4.5）：导出字段 + `NewUser`/`RestoreUser`/`NormalizeEmail`/`CanLogin`/`MarkLoggedIn` |
 | `domain/gateway.go` | 聚合持久化端口 `UserGateway`（GetByEmail/Create/Update）；端口多于一个时改为 `domain/gateway/` 子包，一端口一文件 |
-| `infrastructure/repository/user.go` | 该 DO **唯一** repository：写实现 `UserGateway`，读实现 `UserQuery.ByID`（直查列 → VO） |
+| `infrastructure/repository/user.go` | 该 DO **唯一** repository（嵌入 `mago.AbstractRepository[db.User]`，§18.3）：写实现 `UserGateway`，读实现 `UserQuery.ByID`（直查列 → VO） |
 | `infrastructure/repository/smtp.go` | 第三方/短连接调用逻辑（SMTP 发验证码），实现 application 的 `CodeSender` |
-| `infrastructure/repository/password.go` | bcrypt 散列，实现 application 的 `PasswordHasher` |
-| `infrastructure/repository/token.go` | JWT 签发，实现 application 的 `TokenIssuer`（`TokenGeneratorWithTTL` 按次指定有效期） |
+| `infrastructure/util/password.go` | bcrypt 散列（无 DO 的纯工具类，§18.6），实现 application 的 `PasswordHasher` |
+| `infrastructure/util/token.go` | JWT 签发（无 DO 的纯工具类，§18.6），实现 application 的 `TokenIssuer`（`TokenGeneratorWithTTL` 按次指定有效期） |
 | `infrastructure/repository/verifycode.go` | 邮箱验证码存储（内存 + TTL + 一次性核销，实现 `VerifyCodeStore`）；多副本换 Redis 只改 `conf/provider.go` 桥接 |
-| `infrastructure/repository/migration.go` | 数据迁移：AutoMigrate 建表 + 默认种子用户「张三」（幂等，已存在则跳过且不覆盖密码） |
+| `infrastructure/repository/migration.go` | 数据迁移：AutoMigrate 建表 + 默认种子用户「张三」（幂等，已存在则跳过且不覆盖密码），返回 `client/vo.MigrationResultVO` |
 | `adapter/script/seeduser/main.go` | 迁移入口脚本：`cd demo && go run ./internal/user/adapter/script/seeduser -f ./conf.yml` |
 | `infrastructure/repository/queue.go` | 异步任务发布（`queuex` redis，实现 application 的 `TaskQueue`；`conf.Queue.GetClient()` 取客户端） |
 | `infrastructure/repository/sequence.go`（见下） | 本机内存编号计数器 |
@@ -60,9 +66,9 @@
 | `infrastructure/do/cache/verifycode.go` | 验证码内存快照 DO（Code/ExpireAt），按通用分类 `cache` 落位 |
 | `infrastructure/do/mail/verifycode.go` | 邮件报文 DO（按通用分类 `mail` 落位，只放字段） |
 | `infrastructure/convertor/user.go` | DO ↔ Entity / VO |
-| `infrastructure/do/db/user.go` | 表结构 DO（`TableName() = "user"`） |
-| `infrastructure/util/bool.go` | 只放无状态纯辅助（类型转换）；功能逻辑不进 util |
-| `internal/user/arch_test.go` | 分层依赖断言，改错方向会直接失败 |
+| `infrastructure/do/db/user.go` | 表结构 DO（嵌入 `mago.AbstractDataObject`，`TableName() = "user"`；一表一文件，§18.2） |
+| `infrastructure/util/` | 无 DO 的纯工具类，按分类一分类一文件：`bool.go`（类型转换）、`password.go`（散列）、`token.go`（签发）（§18.6） |
+| `internal/user/arch_test.go` | 分层依赖断言 + 一文件一核心 struct 断言（`TestOneStructPerFile`），改错方向或堆积 struct 会直接失败 |
 
 ## 3. 硬约束（违反即返工）
 
@@ -70,6 +76,11 @@
 | --- | --- |
 | 依赖方向 | domain 不 import adapter/application/infrastructure；application 不 import adapter/infrastructure；基础设施实现不 import adapter |
 | 一 DO 一 repository | 写方法（Gateway）与读方法（直查列）都挂同一个 repository，禁止两个 repository 指向同一个 DO（§6） |
+| 一文件一核心 struct | 文件名与 struct 名关联（`user.go` ↔ `User`）；多个核心 struct 必须拆分多文件；工具类辅助函数按分类分散建文件，禁堆积（§18.1） |
+| 框架基类嵌入 | do/db 嵌入 `mago.AbstractDataObject`（一表一文件）；db 操作的 repository 嵌入 `mago.AbstractRepository[DO]`；dto 嵌入 `mago.AbstractDTO`；vo 嵌入 `mago.AbstractViewObject`（§18.2、§18.3、§18.5） |
+| 公共 struct 优先 | client 的 dto/vo 优先复用 mago 公共 struct：分页 `mago.PageVO[T]`/`mago.AbstractPageQuery`、ID `mago.IdVO`、布尔 `mago.BoolVO`、空响应 `mago.EmptyVO`，没有才自定义（§18.4） |
+| 分页 | 优先 mago 封装：`mago.AbstractPageQuery` + `AbstractRepository.Paginate` → `mago.PageVO`，禁手写 LIMIT/OFFSET + COUNT（§18.3） |
+| 跨层共用 struct | 被两层及以上引用的 struct（事件、结果、共享视图）优先评估迁入 `client/dto` 或 `client/vo`，共用方只依赖契约包；domain 模型、do、仅组合根消费的装配类型不迁（§18.7） |
 | adapter 零业务 | 只做绑定/校验/回写；HTTP 与 MCP 共用 `client/dto`、`client/vo` 与同一个 application Service，禁止自造 in/out 类型 |
 | 轻量 CQRS | 读路径 `adapter → application → repository 读方法 → client/vo`，不加载聚合；仅当 domain Gateway 已有可复用方法时才走 domain（§8） |
 | ctx 风格 | 跨层方法（Service、Gateway、repository、端口实现）首参 `context.Context`，一路透传（gorm 用 `WithContext`）；禁止业务代码 `context.Background()`（§16.1） |
@@ -86,7 +97,7 @@
 | 启动装配 | 进程入口只有 `cmd/<app>/main.go`（flag、配置、造 Server engine、`InitHandler`、`NewApp`、`Run`）；`NewApp` 返回 `mago.App`，形参只允许 配置 + Server engine + `conf.Handler`，**禁止出现 adapter 内实例**；依赖图写在 `conf/wire.go`（build tag wireinject，只放 `InitHandler`），桥接 provider 在 `conf/provider.go`，`conf/handler.go` 汇总 adapter 入口并 `Bind` 到 engine，`conf/wire_gen.go` 是生成物（入库、禁手改）；MCP 引擎在 `conf/server/mcp.go`，`adapter/mcp` 只实现 `RegisterTools`；`conf/` 只装配不写业务，`internal/` 不得 import `conf/`（§11、§17） |
 | wire 装配 | 注入器只能有一个返回值（可加 `error`），多返回值不支持；按类型注入，一个类型只能有一个 provider；concrete → interface 必须显式桥接；同一实例绑多端口用两个桥接函数指向同一 concrete；子配置用切片 provider；provider 不放 `wire.go`（会被复制进生成物）；没消费方的 provider 会报 unused；改完必须 `go tool wire ./conf` 并提交生成物（§11.5） |
 | 构造函数与单例 | 每个 `NewXxx` 先判断是否需要进程内唯一并写进注释：持有唯一状态/昂贵连接的对象做单例（`sync.Once`，如编号计数器 `NewSequence`），无状态或按配置装配的保持每次新建由组合根注入；禁止裸 `if ins == nil`，单例要给测试留隔离出口（§16.8） |
-| infrastructure 逻辑落位 | infrastructure 里的功能逻辑（散列、签发、HTTP、计数、文件读写）一律 `repository/<实现>.go`（配 `do/<通用分类>/`），禁止在 infrastructure 根目录或 `util/` 另开文件实现（§2.4、§7.4） |
+| infrastructure 逻辑落位 | repository ↔ do 一一对应：有 DO 的实现（HTTP、SMTP、计数、文件读写）放 `repository/<实现>.go`（配 `do/<通用分类>/`）；无 DO 的纯工具实现（散列、签发、类型转换）放 `util/<分类>.go`，一分类一文件；禁止在 infrastructure 根目录建功能文件（§2.4、§7.4、§18.6） |
 | 外部服务封装 | 第三方开放平台、SMTP 等短连接，以及本机内存/磁盘操作：结构放 `infrastructure/do/<通用分类>/`（db/cache/mq/http/mail/rpc，禁按业务功能建包），读写与并发逻辑放 `infrastructure/repository/<实现>.go`，一个实现一个文件（§7.4） |
 | 定时任务与队列 | 定时任务：对多副本无副作用的优先 `helper.Cron(ctx, cronName, interval, task)`（`helper/corn.go`，进程内 ticker，勿改名）；有副作用（发券/扣款/通知/流水号）必须入队（`dispatcher.TaskID` 去重）或加分布式锁，并在注释说明为何不重复。消息队列：优先 `queuex/redisq`（`queue.default: redis` + `queue.redis.dsn`，装配在 `conf/server/queue.go`），业务只依赖 `queuex.Server`/`queuex.Client`；sqlite 队列只用于单实例/本地；禁绕过 queuex 直接 import `asynq`/`kafka-go`/`nsq`。demo 落地：任务名 `client/constant.TaskUserRegistered`、载荷 `client/dto.UserRegisteredEvent`、发布 `repository/queue.go`（实现 `application.TaskQueue`）、消费 `adapter/mq/user.go`、装配 `conf/server/queue.go` + `Handler.TaskRegistrars()`、配置 `queue.default: redis`（§12.3、§16.6） |
 | 依赖选型 | 协议/功能/开放平台接入按优先级取第一个可用方案：标准库 → mago 仓库组件 → 社区官方库 → 高热度且仍在维护的库 → 自己实现；跳级要写理由（§16.6） |
@@ -100,14 +111,15 @@
 | --- | --- |
 | 加一个用例 | `application/<ctx>.go` 加方法 → `client/dto`、`client/vo` → `adapter/http` 与 `adapter/mcp` 各加入口 |
 | 加一个字段 | `infrastructure/do/db` → `infrastructure/convertor` → `domain` → `client/vo` 或 `client/dto` |
-| 加一个查询 | 同一 repository 加读方法（返回 `client/vo`）→ `application` 的 Query 端口加方法 |
+| 加一个查询 | 同一 repository 加读方法（返回 `client/vo`；分页用 `mago.AbstractPageQuery` + `Paginate` → `mago.PageVO`）→ `application` 的 Query 端口加方法 |
+| 加一个 DTO/VO | `client/dto` 或 `client/vo` 按类型名新建文件（一文件一类型）；dto 嵌入 `mago.AbstractDTO`、vo 嵌入 `mago.AbstractViewObject`；分页响应优先复用 `mago.PageVO`；跨层共用的 struct 优先评估落 client（§18） |
 | 加事务（多表原子写） | 写端口加 `WithTransaction(ctx context.Context, fn func(ctx context.Context) error) error`（`AbstractRepository` 已实现）→ application 里 `repo.WithTransaction(ctx, func(ctx) error {...})`，内部仓储调用自动入事务；仓储内部一律 `TxDB(ctx, do)`（§14.2） |
 | 加一个错误码 | `client/error.go` 的 `init()` 中 `mago.InitErrorCodeMsg` 注册 |
-| 换基础设施 | 只改 `infrastructure`（repository 换存储、`repository/<实现>.go` 换散列/JWT 实现），再把 `conf/provider.go` 的桥接指过去、重跑 wire，上层零改动 |
+| 换基础设施 | 只改 `infrastructure`（repository 换存储、`util/<分类>.go` 换散列/JWT 实现），再把 `conf/provider.go` 的桥接指过去、重跑 wire，上层零改动 |
 | 新增上下文 | 复制 `internal/user` 四层骨架；跨上下文只 import 对方 `client/api` |
 | 加一个 Server（TCP/WS/MQTT/队列） | `conf/server/<协议>.go` 加 `NewXxxServer(c *config.Conf)`（未启用返回 nil）→ 在 `cmd` 里造实例并在 `NewApp` 里 append 非 nil Server → `NewApp` 形参同步追加（不得是 adapter 类型）（§11.1、§11.2） |
 | 加一个依赖对象（Gateway/Service/Controller） | 在 `conf/wire.go` 的 `wire.Build` 里补构造函数；concrete → interface 的绑定写 `conf/provider.go`；adapter 入口加进 `conf/handler.go` 的 `Handler` 字段与 `Bind`；再跑 `go tool wire ./conf`（§11.5） |
-| 换端口实现（散列/签发/发码） | 新增 `infrastructure/repository/<实现>.go` → 把 `provider.go` 里对应桥接函数改为返回新实现 → 重跑 wire；上层零改动（§6.3、§11.5） |
+| 换端口实现（散列/签发/发码） | 无 DO 的纯工具（散列/签发）新增 `infrastructure/util/<分类>.go`，有 DO 的实现（发码）新增 `infrastructure/repository/<实现>.go` → 把 `provider.go` 里对应桥接函数改为返回新实现 → 重跑 wire；上层零改动（§6.3、§11.5、§18.6） |
 | 加 HTTP 接口 / 路由 | 在 `conf/handler.go` 的 `Handler.Bind` 里按模块前缀 `Group` → `adapter/http` 的 Controller `Router`；动作类路径还要登记 `client/api/contracts.go`（§7.5、§11.2） |
 | 加一个 HTTP 中间件 | `conf/middleware/<关注点>.go`，`func Xxx() app.HandlerFunc`，横切后 `ctx.Next(c)`；在 `NewHttpServer` 或分组上 `Use` 挂载（§11.2） |
 | 加/改 MCP 工具 | 在 `adapter/mcp/<ctx>.go` 的 `RegisterTools` 里 `sdk.AddTool`（入参复用 `client/dto`）→ `conf/handler.go` 的 `McpRegistrars()` 补上下文 → 同步 `adapter/mcp/user_test.go` 的工具清单断言；引擎代码零改动（§7.3） |
@@ -153,6 +165,7 @@ cd internal/user/infrastructure/repository && /usr/local/go/bin/go test -tags qu
 14. 在 `NewApp` 形参里列 adapter 实例（`*UserController`、`*UserMcp`…），或让 `Bind`/`NewApp` 里出现 `NewXxx`：入口一律经 `conf.Handler` 汇总，构造一律归 wire。
 15. 在 `adapter/mcp` 里自建 `sdk.Server`、提供 `Handler()`，或让 MCP 引擎依赖 adapter 类型：引擎属 `conf/server/mcp.go`（`ToolRegistrar` 接口反向定义），adapter 只实现 `RegisterTools`。
 16. 用 `helper.Cron` 跑发券/扣款/通知/流水号这类有副作用任务（多副本会重复执行）；把 sqlite 队列当生产默认；在业务里直接 import `asynq`/`kafka-go`/`nsq` 绕过 `queuex`。
+17. 一个 go 文件堆积多个核心 struct；do/db、db repository、dto、vo 不嵌入框架基类；手写 LIMIT/OFFSET + COUNT 分页而不用 `Paginate`；把无 DO 的纯工具类放进 repository 而不是 `infrastructure/util/`；跨层共用的事件/结果 struct 留在某层内部包而不评估迁入 client（§18）。
 
 ## 7. README 章节索引
 
@@ -176,4 +189,5 @@ cd internal/user/infrastructure/repository && /usr/local/go/bin/go test -tags qu
 - [构造函数与单例](README.md#168-构造函数与单例)：先判是否需要进程内唯一，sync.Once 实现，测试留隔离出口
 - [文件命名](README.md#167-文件命名)：全小写单词直连，下划线只用于特殊后缀
 - [架构依赖约束](README.md#17-架构依赖约束)：允许/禁止依赖表
-- [AI Agent 开发约束](README.md#18-ai-agent-开发约束)：开发前/中/后清单
+- [代码组织规范](README.md#18-代码组织规范)：一文件一核心 struct、do/db 与 repository/dto/vo 基类嵌入、分页走 Paginate、公共 struct 优先、无 DO 工具进 util、跨层共用 struct 优先评估迁入 client
+- [AI Agent 开发约束](README.md#19-ai-agent-开发约束)：开发前/中/后清单
